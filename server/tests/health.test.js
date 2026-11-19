@@ -18,6 +18,7 @@ describe("health endpoints", () => {
       expect.objectContaining({
         status: expect.stringMatching(/^(ok|degraded)$/),
         db: expect.stringMatching(/^(connected|disconnected)$/),
+        mail: expect.stringMatching(/^(smtp|resend|not_configured)$/),
       }),
     );
   });
@@ -51,6 +52,7 @@ describe("health endpoints", () => {
       expect(response.body).toEqual({
         status: "ok",
         db: "connected",
+        mail: expect.stringMatching(/^(smtp|resend|not_configured)$/),
       });
     },
     15000,

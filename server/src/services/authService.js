@@ -108,16 +108,20 @@ async function deliverPasswordResetEmail(to, resetUrl) {
   if (!isMailConfigured()) {
     return { sent: false, reason: "not_configured" };
   }
+  let timeoutId;
   try {
-    const result = await Promise.race([
+    return await Promise.race([
       sendPasswordResetEmail(to, resetUrl),
       new Promise((resolve) => {
-        setTimeout(() => resolve({ sent: false, reason: "timeout" }), 12_000);
+        timeoutId = setTimeout(() => resolve({ sent: false, reason: "timeout" }), 20_000);
       }),
     ]);
-    return result;
   } catch {
     return { sent: false, reason: "error" };
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

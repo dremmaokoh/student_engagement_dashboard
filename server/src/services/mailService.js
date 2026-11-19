@@ -3,26 +3,6 @@ import { env } from "../config/env.js";
 
 let transporter;
 
-const DEBUG_INGEST =
-  "http://127.0.0.1:7729/ingest/49b0ec64-57cd-4256-bb67-4237dbfe0263";
-
-function debugLog(hypothesisId, location, message, data) {
-  // #region agent log
-  fetch(DEBUG_INGEST, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c0dc5a" },
-    body: JSON.stringify({
-      sessionId: "c0dc5a",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-}
-
 export function mailTransportMode() {
   if (env.resendApiKey) {
     return "resend";
@@ -78,10 +58,6 @@ function resendFromAddress() {
 
 async function sendViaResend({ to, subject, text, html, replyTo }) {
   const from = resendFromAddress();
-  debugLog("D", "mailService.js:sendViaResend", "resend_attempt", {
-    hasReplyTo: Boolean(replyTo),
-    fromDomain: from.includes("@") ? from.split("@").pop() : "unknown",
-  });
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -101,10 +77,6 @@ async function sendViaResend({ to, subject, text, html, replyTo }) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      debugLog("D", "mailService.js:sendViaResend", "resend_rejected", {
-        status: response.status,
-        errorName: payload?.name || null,
-      });
       return {
         sent: false,
         reason: "resend_error",
@@ -112,14 +84,8 @@ async function sendViaResend({ to, subject, text, html, replyTo }) {
         code: payload?.name || String(response.status),
       };
     }
-    debugLog("D", "mailService.js:sendViaResend", "resend_ok", {
-      idPresent: Boolean(payload?.id),
-    });
     return { sent: true, messageId: payload?.id || null, provider: "resend" };
   } catch (error) {
-    debugLog("D", "mailService.js:sendViaResend", "resend_exception", {
-      code: error?.code || null,
-    });
     return { sent: false, reason: "resend_error", code: error?.code || null };
   }
 }
@@ -130,12 +96,6 @@ async function sendViaSmtp({ to, subject, text, html, replyTo }) {
     return { sent: false, reason: "not_configured" };
   }
 
-  debugLog("A", "mailService.js:sendViaSmtp", "smtp_attempt", {
-    host: env.smtpHost,
-    port: env.smtpPort,
-    codeExpected: "ETIMEDOUT_if_cloud_blocked",
-  });
-
   try {
     const info = await mailer.sendMail({
       from: mailFromAddress(),
@@ -145,14 +105,9 @@ async function sendViaSmtp({ to, subject, text, html, replyTo }) {
       text,
       html,
     });
-    debugLog("A", "mailService.js:sendViaSmtp", "smtp_ok", { hasMessageId: Boolean(info?.messageId) });
     return { sent: true, messageId: info?.messageId || null, provider: "smtp" };
   } catch (error) {
     console.error("Mail send failed:", error.code || "unknown", error.message || "no message");
-    debugLog("A", "mailService.js:sendViaSmtp", "smtp_failed", {
-      code: error?.code || null,
-      message: error?.message || null,
-    });
     return {
       sent: false,
       reason: "smtp_error",
@@ -163,7 +118,6 @@ async function sendViaSmtp({ to, subject, text, html, replyTo }) {
 
 export async function sendMail(params) {
   const mode = mailTransportMode();
-  debugLog("B", "mailService.js:sendMail", "transport_selected", { mode });
 
   if (mode === "resend") {
     return sendViaResend(params);

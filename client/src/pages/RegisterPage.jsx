@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import PasswordField from "../components/design/PasswordField.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
 import { apiRequest } from "../services/api.js";
 
@@ -94,26 +95,20 @@ export default function RegisterPage() {
             onChange={(event) => setEmail(event.target.value)}
             required
           />
-          <label htmlFor="password">Password</label>
-          <input
+          <PasswordField
             id="password"
             name="password"
-            type="password"
-            autoComplete="new-password"
+            label="Password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            required
             minLength={8}
           />
-          <label htmlFor="confirmPassword">Confirm password</label>
-          <input
+          <PasswordField
             id="confirmPassword"
             name="confirmPassword"
-            type="password"
-            autoComplete="new-password"
+            label="Confirm password"
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
-            required
             minLength={8}
           />
           {error ? (

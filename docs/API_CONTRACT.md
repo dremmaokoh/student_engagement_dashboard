@@ -15,10 +15,12 @@ Swagger is public (no JWT) so the contract can be inspected. Trying protected op
 | GET | `/api/v1/health` | none | API + database status |
 
 ```json
-{ "status": "ok", "db": "connected" }
+{ "status": "ok", "db": "connected", "mail": "smtp" }
 ```
 
-`status` is `ok` when the database is connected, otherwise `degraded`.
+`status` is `ok` when the database is connected, otherwise `degraded`. `db` is `connected` or `disconnected`.
+
+`mail` reports the configured mail transport: `smtp`, `resend`, or `not_configured`. `resend` takes precedence when `RESEND_API_KEY` is set. This field reflects configuration only — it does **not** test whether the mail server or provider is reachable, and it does not affect `status`.
 
 ## Phase 1 — authentication
 

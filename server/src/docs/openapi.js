@@ -40,9 +40,16 @@ export const openApiSpec = {
       },
       Health: {
         type: "object",
+        required: ["status", "db", "mail"],
         properties: {
           status: { type: "string", enum: ["ok", "degraded"] },
           db: { type: "string", enum: ["connected", "disconnected"] },
+          mail: {
+            type: "string",
+            enum: ["smtp", "resend", "not_configured"],
+            description:
+              "Configured mail transport only; it does not indicate whether the mail provider is reachable.",
+          },
         },
       },
     },

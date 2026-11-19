@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
+import PasswordField from "../components/design/PasswordField.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
 
 export default function LoginPage() {
@@ -56,15 +57,13 @@ export default function LoginPage() {
             onChange={(event) => setEmail(event.target.value)}
             required
           />
-          <label htmlFor="password">Password</label>
-          <input
+          <PasswordField
             id="password"
             name="password"
-            type="password"
+            label="Password"
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            required
           />
           {resetNotice ? <p role="status">Password updated. Sign in with your new password.</p> : null}
           {error ? (

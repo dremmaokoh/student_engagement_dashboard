@@ -33,7 +33,7 @@ describe("student email and communications", () => {
     await StudentCommunication.deleteMany({ lecturerId: { $in: users.map((row) => row._id) } });
     await Enrollment.deleteMany({ courseId: { $in: courseIds } });
     await Course.deleteMany({ _id: { $in: courseIds } });
-    await Student.deleteMany({ matriculationNumber: { $regex: /^COMM/ } });
+    await Student.deleteMany({ matriculationNumber: { $regex: /^COMM(?:LEG|S)?\d+$/ } });
     await User.deleteMany({ email: { $regex: `^${PREFIX}` } });
     await disconnectDatabase();
   });
@@ -98,7 +98,7 @@ describe("student email and communications", () => {
     expect(student?.fullName).toBe("Legacy Student");
   });
 
-  test("send message records history and surfaces not-configured when SMTP is absent", async () => {
+  test("send message records history and returns not_configured when mail delivery is disabled", async () => {
     const { token, email: lecturerEmail } = await registerLecturer();
     const auth = { Authorization: `Bearer ${token}` };
     const stamp = Date.now().toString().slice(-5);
@@ -137,10 +137,13 @@ describe("student email and communications", () => {
         courseId,
       });
 
-    expect([201, 502, 503]).toContain(send.status);
-    const communication = send.body.data?.communication || send.body.communication;
+    expect(send.status).toBe(503);
+    expect(send.body.message).toMatch(/not configured/i);
+    const communication = send.body.communication;
     expect(communication).toBeDefined();
-    expect(communication.status).toMatch(/sent|not_configured|failed/);
+    expect(communication.status).toBe("not_configured");
+    expect(communication.errorMessage).toMatch(/not configured/i);
+    expect(communication.providerMessageId).toBeNull();
     expect(communication.subject).toBe("Follow-up");
     expect(communication.replyToEmail).toBe(lecturerEmail.toLowerCase());
     expect(communication.toEmail).toBe(`comm${stamp}@example.com`);

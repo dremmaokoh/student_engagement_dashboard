@@ -80,10 +80,12 @@ Sample CSV for demos: [docs/sample-activity.csv](docs/sample-activity.csv). Stud
 Expected JSON:
 
 ```json
-{ "status": "ok", "db": "connected" }
+{ "status": "ok", "db": "connected", "mail": "smtp" }
 ```
 
-If MongoDB is down, the API still serves health with `"db": "disconnected"` and `"status": "degraded"`. The process logs a connection error and does not print secrets.
+`mail` is the configured transport (`smtp`, `resend`, or `not_configured`); `resend` takes precedence when `RESEND_API_KEY` is set. It reports configuration only — it does not verify that the mail provider is reachable and does not affect `status`.
+
+If MongoDB is down, the API still serves health with `"db": "disconnected"` and `"status": "degraded"` (and the same `mail` field). The process logs a connection error and does not print secrets.
 
 ## Tests
 
@@ -115,7 +117,7 @@ Recorded 10 November 2026. These are real command outcomes, not invented.
 
 **Runtime**
 - API listened on `0.0.0.0:5000`
-- `GET /health` and `GET /api/v1/health` both returned `{"status":"degraded","db":"disconnected"}`
+- `GET /health` and `GET /api/v1/health` both returned `{"status":"degraded","db":"disconnected"}` (Phase 0 predates the `mail` field)
 - Vite client built successfully (`vite build`)
 - http://localhost:5173 loaded the Phase 0 page and showed API status **degraded**, database **disconnected**
 
