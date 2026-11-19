@@ -41,7 +41,8 @@ export function createApp() {
   app.use("/api/v1", notFoundHandler);
 
   if (isProduction()) {
-    const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../client/dist");
+    const serverSrcDir = path.dirname(fileURLToPath(import.meta.url));
+    const clientDist = path.join(path.resolve(serverSrcDir, "../.."), "client", "dist");
     app.use(express.static(clientDist, { index: false }));
     app.get(/^(?!\/api\/|\/health).*/, (_req, res, next) => {
       res.sendFile(path.join(clientDist, "index.html"), (err) => {
