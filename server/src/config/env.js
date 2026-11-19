@@ -39,6 +39,8 @@ export const env = {
   smtpUser: readEnv("SMTP_USER", ""),
   smtpPass: readEnv("SMTP_PASS", "").replace(/\s+/g, ""),
   mailFrom: readEnv("MAIL_FROM", "Student Engagement Dashboard <noreply@localhost>"),
+  resendApiKey: readEnv("RESEND_API_KEY", ""),
+  resendFrom: readEnv("RESEND_FROM", ""),
 };
 
 export function isProduction() {

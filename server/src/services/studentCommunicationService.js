@@ -8,6 +8,7 @@ import { HttpError } from "../utils/httpError.js";
 import { parsePagination, paginated } from "../utils/pagination.js";
 import { toPublicCourse } from "../utils/toPublic.js";
 import { env } from "../config/env.js";
+import { describeMailFailure } from "./mailDeliveryErrors.js";
 import { sendMail } from "./mailService.js";
 
 async function assertLecturerStudentAccess(lecturerId, studentId) {
@@ -121,10 +122,10 @@ export async function sendStudentMessage(studentId, lecturerId, input) {
       providerMessageId = result.messageId || null;
     } else if (result.reason === "not_configured") {
       status = "not_configured";
-      errorMessage = "Email delivery is not configured on this server.";
+      errorMessage = describeMailFailure(result);
     } else {
       status = "failed";
-      errorMessage = result.reason || "The message could not be sent.";
+      errorMessage = describeMailFailure(result) || "The message could not be sent.";
     }
   } catch (error) {
     status = "failed";
