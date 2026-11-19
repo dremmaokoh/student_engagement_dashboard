@@ -102,11 +102,6 @@ export default function ViewStudentMessageModal({ open, message, onClose }) {
             </p>
           ) : null}
         </div>
-        <footer className="student-modal-footer">
-          <button type="button" className="primary-btn" onClick={onClose}>
-            Close
-          </button>
-        </footer>
       </div>
     </dialog>
   );
