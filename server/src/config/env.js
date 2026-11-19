@@ -18,11 +18,19 @@ function readEnv(name, fallback) {
   return value;
 }
 
+function defaultClientOrigin() {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  if (renderUrl) {
+    return renderUrl;
+  }
+  return "http://localhost:5173";
+}
+
 export const env = {
   nodeEnv: readEnv("NODE_ENV", "development"),
   port: Number(readEnv("PORT", "5000")),
   mongodbUri: readEnv("MONGODB_URI", "mongodb://127.0.0.1:27017/student_engagement"),
-  clientOrigin: readEnv("CLIENT_ORIGIN", "http://localhost:5173"),
+  clientOrigin: readEnv("CLIENT_ORIGIN", defaultClientOrigin()),
   jwtSecret: readEnv("JWT_SECRET", ""),
   jwtExpiresIn: readEnv("JWT_EXPIRES_IN", "8h"),
   authRegisterEnabled: readEnv("AUTH_REGISTER_ENABLED", "true") !== "false",

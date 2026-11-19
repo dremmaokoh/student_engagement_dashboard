@@ -138,10 +138,10 @@ export default function SettingsCourseClassificationPage() {
       <form className="stack-form settings-course-config-form" onSubmit={onSubmit}>
         <section className="card settings-config-section">
           <h2>
-            <IndicatorGlyph indicatorKey="lastActivity" /> Last recorded LMS login/activity
+            <IndicatorGlyph indicatorKey="lastActivity" /> Last Recorded Login
           </h2>
           <p className="panel-desc">
-            Bands use calendar days between the student&apos;s last recorded activity and the monitoring period end
+            Bands use calendar days between the student&apos;s last recorded login and the monitoring period end
             (UTC). Missing timestamps yield Insufficient Data, not zero.
           </p>
           <table className="data-table">

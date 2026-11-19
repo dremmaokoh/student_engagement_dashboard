@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import { env } from "./config/env.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { env, isProduction } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { ensureDatabaseConnectionMiddleware } from "./middleware/ensureDatabaseConnection.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -37,6 +39,19 @@ export function createApp() {
   app.use("/api/v1", settingsRouter);
   app.use("/api/v1", studentsRouter);
   app.use("/api/v1", notFoundHandler);
+
+  if (isProduction()) {
+    const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../client/dist");
+    app.use(express.static(clientDist, { index: false }));
+    app.get(/^(?!\/api\/|\/health).*/, (_req, res, next) => {
+      res.sendFile(path.join(clientDist, "index.html"), (err) => {
+        if (err) {
+          next(err);
+        }
+      });
+    });
+  }
+
   app.use(errorHandler);
 
   return app;

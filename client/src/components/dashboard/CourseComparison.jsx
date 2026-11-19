@@ -54,7 +54,7 @@ export default function CourseComparison({
               <th>Course</th>
               <th>Enrolments</th>
               <th>Active</th>
-              <th>Attention</th>
+              <th>Requiring Attention</th>
               <th>Inactive</th>
               <th>Insufficient</th>
               <th>Distribution</th>

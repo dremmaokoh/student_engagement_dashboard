@@ -258,7 +258,7 @@ export default function StudentDetailPage() {
                               <h3 className="student-detail-evidence-title">Evidence — {row.course.code}</h3>
                               <dl className="student-evidence-dl">
                                 <div>
-                                  <dt>Last LMS activity</dt>
+                                  <dt>Last Recorded Login</dt>
                                   <dd>{dateLabel(row.lastActivityAt)}</dd>
                                 </div>
                                 <div>

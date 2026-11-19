@@ -40,7 +40,7 @@ const KPI_LABELS = {
   FOLLOWUP: "Needing follow-up",
   ALL: "All classified enrolments",
   ACTIVE: "Active",
-  REQUIRING_ATTENTION: "Requiring attention",
+  REQUIRING_ATTENTION: "Requiring Attention",
   INACTIVE: "Inactive",
   INSUFFICIENT_DATA: "Insufficient data",
 };
@@ -645,7 +645,7 @@ export default function DashboardPage() {
                         <th>Student ID</th>
                         <th>Course</th>
                         <th>Engagement score</th>
-                        <th>Last activity</th>
+                        <th>Last Recorded Login</th>
                         <th>Classification</th>
                         <th className="students-col-action">Action</th>
                       </tr>
@@ -666,7 +666,7 @@ export default function DashboardPage() {
                             <div className="course-name">{item.course?.name}</div>
                           </td>
                           <td data-label="Engagement score">{formatScore(item.displayScore)}</td>
-                          <td data-label="Last activity">{formatLastRecordedActivity(item.lastActivityAt)}</td>
+                          <td data-label="Last Recorded Login">{formatLastRecordedActivity(item.lastActivityAt)}</td>
                           <td data-label="Classification">
                             <ClassificationBadge classification={item.classification} />
                           </td>

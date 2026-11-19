@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { classificationLabel } from "../../lib/classifications.js";
 import useTableCellPopover from "./useTableCellPopover.js";
 
 const VISIBLE_COURSE_ROWS = 3;
@@ -15,13 +16,10 @@ function courseClassificationLabel(classification) {
   if (!classification) {
     return "Not classified";
   }
-  const labels = {
-    ACTIVE: "Active",
-    REQUIRING_ATTENTION: "Attention",
-    INACTIVE: "Inactive",
-    INSUFFICIENT_DATA: "Insufficient",
-  };
-  return labels[classification] || classification;
+  if (classification === "INSUFFICIENT_DATA") {
+    return "Insufficient Data";
+  }
+  return classificationLabel(classification) || classification;
 }
 
 function CourseStatusLine({ row }) {

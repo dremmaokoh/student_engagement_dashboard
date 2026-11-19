@@ -11,7 +11,7 @@ export default function DistributionBar({ counts, total, className = "", labelle
     { key: "INSUFFICIENT_DATA", className: "dist-insufficient", value: counts.INSUFFICIENT_DATA || 0 },
   ];
 
-  const label = `Active ${counts.ACTIVE || 0}, requiring attention ${counts.REQUIRING_ATTENTION || 0}, inactive ${
+  const label = `Active ${counts.ACTIVE || 0}, Requiring Attention ${counts.REQUIRING_ATTENTION || 0}, inactive ${
     counts.INACTIVE || 0
   }, insufficient ${counts.INSUFFICIENT_DATA || 0}`;
 

@@ -1,5 +1,6 @@
 import IndicatorGlyph from "../dashboard/IndicatorGlyph.jsx";
 import ClassificationBadge from "../design/ClassificationBadge.jsx";
+import { LAST_RECORDED_LOGIN_LABEL } from "../../lib/classifications.js";
 import { toPercentFraction } from "../../lib/weights.js";
 
 export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
@@ -17,7 +18,7 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
         </p>
         <ul className="settings-weight-list">
           <li>
-            <IndicatorGlyph indicatorKey="lastActivity" /> Last activity — {toPercentFraction(weights.lastActivity)}%
+            <IndicatorGlyph indicatorKey="lastActivity" /> {LAST_RECORDED_LOGIN_LABEL} — {toPercentFraction(weights.lastActivity)}%
           </li>
           <li>
             <IndicatorGlyph indicatorKey="materialAccess" /> Material access — {toPercentFraction(weights.materialAccess)}%
@@ -30,8 +31,8 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
       </section>
 
       <section className="settings-config-block">
-        <h3>Last recorded LMS login/activity bands</h3>
-        <p className="panel-desc">Course configuration v{config.version}. Days since last activity (UTC).</p>
+        <h3>{LAST_RECORDED_LOGIN_LABEL} bands</h3>
+        <p className="panel-desc">Course configuration v{config.version}. Days since last recorded login (UTC).</p>
         <table className="data-table settings-compact-table">
           <thead>
             <tr>

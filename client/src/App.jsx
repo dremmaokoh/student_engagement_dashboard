@@ -1,8 +1,9 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/common/ProtectedRoute.jsx";
 import AppShell from "./components/layout/AppShell.jsx";
 import { AuthProvider } from "./features/auth/AuthContext.jsx";
 import CourseLegacyRedirect from "./components/courses/CourseLegacyRedirect.jsx";
+import CourseWorkspaceIndexRedirect from "./components/courses/CourseWorkspaceIndexRedirect.jsx";
 import CourseOverviewPage from "./pages/CourseOverviewPage.jsx";
 import CourseResultDetailPage from "./pages/CourseResultDetailPage.jsx";
 import CourseResultsPage from "./pages/CourseResultsPage.jsx";
@@ -40,18 +41,20 @@ export default function App() {
             <Route path="/overview" element={<DashboardPage />} />
             <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
             <Route path="/courses" element={<CoursesPage />} />
-            <Route path="/courses/:courseId" element={<Navigate to="overview" replace />} />
-            <Route path="/courses/:courseId/overview" element={<CourseOverviewPage />} />
-            <Route path="/courses/:courseId/monitoring" element={<CourseMonitoringPage />} />
-            <Route path="/courses/:courseId/students" element={<CourseLegacyRedirect />} />
-            <Route path="/courses/:courseId/imports" element={<CourseLegacyRedirect openPanel="import" />} />
-            <Route path="/courses/:courseId/configuration" element={<CourseLegacyRedirect openPanel="config" />} />
-            <Route path="/courses/:courseId/settings" element={<CourseSettingsPage />} />
-            <Route path="/courses/:courseId/classification-settings" element={<CourseSettingsPage />} />
+            <Route path="/courses/:courseId" element={<Outlet />}>
+              <Route index element={<CourseWorkspaceIndexRedirect />} />
+              <Route path="overview" element={<CourseOverviewPage />} />
+              <Route path="monitoring" element={<CourseMonitoringPage />} />
+              <Route path="students" element={<CourseLegacyRedirect />} />
+              <Route path="imports" element={<CourseLegacyRedirect openPanel="import" />} />
+              <Route path="configuration" element={<CourseLegacyRedirect openPanel="config" />} />
+              <Route path="settings" element={<CourseSettingsPage />} />
+              <Route path="classification-settings" element={<CourseSettingsPage />} />
+              <Route path="results/:resultId" element={<CourseResultDetailPage />} />
+              <Route path="results" element={<CourseResultsPage />} />
+              <Route path="history" element={<CourseResultsPage />} />
+            </Route>
             <Route path="/settings/classification/:courseId" element={<SettingsCourseClassificationPage />} />
-            <Route path="/courses/:courseId/results/:resultId" element={<CourseResultDetailPage />} />
-            <Route path="/courses/:courseId/results" element={<CourseResultsPage />} />
-            <Route path="/courses/:courseId/history" element={<CourseResultsPage />} />
             <Route path="/students" element={<StudentsPage />} />
             <Route path="/students/:studentId" element={<StudentDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />

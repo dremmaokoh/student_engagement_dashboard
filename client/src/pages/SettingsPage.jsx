@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
+import { LAST_RECORDED_LOGIN_LABEL } from "../lib/classifications.js";
 import { toPercentFraction, weightsTotalPercent } from "../lib/weights.js";
 import { apiRequest } from "../services/api.js";
 
@@ -118,7 +119,7 @@ export default function SettingsPage() {
           <form className="settings-weights-form" onSubmit={onSaveWeights}>
             <div className="settings-weight-grid">
               <label className="settings-weight-field" htmlFor="weightLastActivity">
-                <IndicatorGlyph indicatorKey="lastActivity" /> Last recorded LMS login/activity
+                <IndicatorGlyph indicatorKey="lastActivity" /> {LAST_RECORDED_LOGIN_LABEL}
                 <input
                   id="weightLastActivity"
                   type="number"
@@ -205,7 +206,7 @@ export default function SettingsPage() {
             </thead>
             <tbody>
               <tr>
-                <td>Last activity</td>
+                <td>{LAST_RECORDED_LOGIN_LABEL}</td>
                 <td>80</td>
                 <td>30%</td>
                 <td>24</td>

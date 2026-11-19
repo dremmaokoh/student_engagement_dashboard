@@ -2,7 +2,7 @@ const STATUS_ORDER = ["INACTIVE", "REQUIRING_ATTENTION", "ACTIVE", "INSUFFICIENT
 
 const STATUS_LABELS = {
   ACTIVE: "Active",
-  REQUIRING_ATTENTION: "Requiring attention",
+  REQUIRING_ATTENTION: "Requiring Attention",
   INACTIVE: "Inactive",
   INSUFFICIENT_DATA: "Insufficient",
   NOT_CLASSIFIED: "Not yet classified",

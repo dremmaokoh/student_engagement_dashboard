@@ -151,7 +151,7 @@ export default function CourseResultDetailPage() {
         <h2>Supporting activity data</h2>
         {activity ? (
           <dl className="health">
-            <dt>Last recorded LMS login/activity</dt>
+            <dt>{indicatorLabel("lastActivity")}</dt>
             <dd>{dateLabel(activity.lastActivityAt)}</dd>
             <dt>Materials accessed / available</dt>
             <dd>

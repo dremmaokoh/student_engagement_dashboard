@@ -227,7 +227,7 @@ export default function CourseResultsPage() {
                 <th>Config</th>
                 <th>Students</th>
                 <th>Active</th>
-                <th>Attention</th>
+                <th>Requiring Attention</th>
                 <th>Inactive</th>
                 <th>Insufficient</th>
                 <th></th>

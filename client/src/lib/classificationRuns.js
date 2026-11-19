@@ -69,7 +69,7 @@ export function buildChangesSincePreviousCopy(latest, previous) {
 function classificationPhrase(key) {
   const map = {
     ACTIVE: "are Active",
-    REQUIRING_ATTENTION: "require Attention",
+    REQUIRING_ATTENTION: "are Requiring Attention",
     INACTIVE: "are Inactive",
     INSUFFICIENT_DATA: "have Insufficient Data",
   };

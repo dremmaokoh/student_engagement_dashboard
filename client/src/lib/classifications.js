@@ -51,10 +51,12 @@ export function statusLabel(value) {
   );
 }
 
+export const LAST_RECORDED_LOGIN_LABEL = "Last Recorded Login";
+
 export function indicatorLabel(key) {
   return (
     {
-      lastActivity: "Last recorded LMS login/activity",
+      lastActivity: LAST_RECORDED_LOGIN_LABEL,
       materialAccess: "Course material access",
       assignmentSubmission: "Assignment submission",
     }[key] || key
