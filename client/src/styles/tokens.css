@@ -1,0 +1,124 @@
+:root {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-secondary: #3b82f6;
+  --color-brand-tint: #eff6ff;
+  --color-accent: #facc15;
+  --color-accent-muted: #fbbf24;
+  --color-accent-tint: #fef9c3;
+  --color-gold: var(--color-accent);
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f1f5f9;
+  --color-text: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-border: #e2e8f0;
+  --color-border-subtle: #e8edf3;
+  --color-surface-raised: #ffffff;
+  --color-focus: #2563eb;
+  --color-brand-indigo: #4f46e5;
+  --color-brand-deep: #1e3a8a;
+  --gradient-brand: linear-gradient(135deg, #2563eb 0%, #4f46e5 52%, #3730a3 100%);
+  --gradient-brand-soft: linear-gradient(180deg, #eff6ff 0%, #f8fafc 55%, #ffffff 100%);
+  --gradient-workspace-hero: linear-gradient(
+    95deg,
+    #eff6ff 0%,
+    #ffffff 45%,
+    #fefce8 100%
+  );
+
+  --color-indicator-login: #3976b9;
+  --color-indicator-login-tint: #eaf2fa;
+  --color-indicator-materials: #7656a6;
+  --color-indicator-materials-tint: #f0ebf7;
+  --color-indicator-assignment: #23877b;
+  --color-indicator-assignment-tint: #e7f4f1;
+
+  /* Classification palette — single source of truth (charts, badges, tables, KPIs) */
+  --color-status-active: #059669;
+  --color-status-active-tint: #d1fae5;
+  --color-status-active-border: #34d399;
+  --color-status-attention: #d97706;
+  --color-status-attention-tint: #fef3c7;
+  --color-status-attention-border: #fbbf24;
+  --color-status-inactive: #dc2626;
+  --color-status-inactive-tint: #fee2e2;
+  --color-status-inactive-border: #f87171;
+  --color-status-insufficient: #334155;
+  --color-status-insufficient-tint: #e2e8f0;
+  --color-status-insufficient-border: #64748b;
+  --color-classification-active: var(--color-status-active);
+  --color-classification-attention: var(--color-status-attention);
+  --color-classification-inactive: var(--color-status-inactive);
+  --color-classification-insufficient: var(--color-status-insufficient);
+  --color-status-na: #85818a;
+  --color-status-na-tint: #f1f0f2;
+
+  --font-sans: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --shadow-dashboard: 0 1px 2px rgba(15, 23, 42, 0.05), 0 6px 18px rgba(15, 23, 42, 0.06);
+  --dashboard-section-gap: 22px;
+  --dashboard-card-padding: 18px;
+
+  /* Spacing scale */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+
+  /* Legacy spacing aliases (preserve existing layouts) */
+  --space-1: var(--spacing-2);
+  --space-2: var(--spacing-4);
+  --space-3: var(--spacing-6);
+  --space-4: var(--spacing-8);
+
+  /* Card padding tiers */
+  --card-padding-major: var(--spacing-6);
+  --card-padding-standard: var(--spacing-5);
+  --card-padding-compact: var(--spacing-4);
+  --card-padding-nested: var(--spacing-3);
+
+  /* Shared control metrics */
+  --control-padding-y: var(--spacing-3);
+  --control-padding-x: var(--spacing-4);
+  --table-cell-padding-y: var(--spacing-3);
+  --table-cell-padding-x: var(--spacing-4);
+
+  /* Main workspace (shell content column; sidebar is fixed at 260px) */
+  --layout-content-max: 1760px;
+  --layout-content-padding-x: var(--spacing-6);
+  --layout-content-padding-y: var(--spacing-6);
+  --layout-content-padding-bottom: var(--spacing-8);
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --layout-content-padding-x: var(--spacing-5);
+    --layout-content-padding-y: var(--spacing-5);
+    --layout-content-padding-bottom: var(--spacing-6);
+  }
+}
+
+@media (max-width: 800px) {
+  :root {
+    --layout-content-padding-x: var(--spacing-4);
+    --layout-content-padding-y: var(--spacing-4);
+    --layout-content-padding-bottom: var(--spacing-5);
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --layout-content-padding-x: var(--spacing-3);
+    --layout-content-padding-y: var(--spacing-3);
+    --layout-content-padding-bottom: var(--spacing-4);
+  }
+}

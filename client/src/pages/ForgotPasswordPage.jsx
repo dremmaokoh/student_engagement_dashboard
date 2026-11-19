@@ -1,0 +1,73 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { apiRequest } from "../services/api.js";
+
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [resetUrl, setResetUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setResetUrl("");
+    setSubmitting(true);
+    try {
+      const result = await apiRequest("/api/v1/auth/forgot-password", {
+        method: "POST",
+        body: { email },
+      });
+      setMessage(result.data.message);
+      if (result.data.resetUrl) {
+        setResetUrl(result.data.resetUrl);
+      }
+    } catch (err) {
+      setError(err.message || "Unable to start a password reset.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="card auth-card">
+        <div className="brand-bar" aria-hidden="true" />
+        <h1>Forgot password</h1>
+        <p className="lede">Enter your lecturer email. If it is registered, we will send a reset link.</p>
+        <form onSubmit={onSubmit} className="auth-form">
+          <label htmlFor="email">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {message ? <p role="status">{message}</p> : null}
+          {resetUrl ? (
+            <p className="auth-switch">
+              Email is not required in this local environment.{" "}
+              <a href={resetUrl}>Open reset link</a>
+            </p>
+          ) : null}
+          <button type="submit" className="primary-btn" disabled={submitting}>
+            {submitting ? "Sending…" : "Send reset link"}
+          </button>
+        </form>
+        <p className="auth-switch">
+          <Link to="/login">Back to sign in</Link>
+        </p>
+      </section>
+    </main>
+  );
+}

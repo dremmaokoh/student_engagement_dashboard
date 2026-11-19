@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+server/.env
+client/.env
+client/.env.local
+
+# Logs and coverage
+logs/
+*.log
+npm-debug.log*
+coverage/
+server/coverage/
+client/coverage/
+
+# Uploads and generated artefacts
+uploads/
+tmp/
+dist/
+client/dist/
+server/dist/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test / cache
+.cache/
+.vitest/
+*.tsbuildinfo

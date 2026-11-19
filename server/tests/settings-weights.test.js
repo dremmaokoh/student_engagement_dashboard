@@ -1,0 +1,88 @@
+import request from "supertest";
+import { createApp } from "../src/app.js";
+import { connectDatabase, disconnectDatabase } from "../src/config/db.js";
+import { env } from "../src/config/env.js";
+import Course from "../src/models/Course.js";
+import LecturerIndicatorWeights from "../src/models/LecturerIndicatorWeights.js";
+import User from "../src/models/User.js";
+
+const app = createApp();
+const PREFIX = "settings-weights-test-";
+
+async function seed() {
+  const email = `${PREFIX}${Date.now()}@example.com`;
+  const auth = await request(app).post("/api/v1/auth/register").send({
+    fullName: "Weights Lecturer",
+    email,
+    password: "securePass1",
+  });
+  const token = auth.body.data.token;
+  const code = `SW${Date.now().toString().slice(-6)}`;
+  await request(app)
+    .post("/api/v1/courses")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ name: "Weights Course", code });
+  return { token, email };
+}
+
+describe("global indicator weights", () => {
+  let mongoReady = false;
+
+  beforeAll(async () => {
+    try {
+      await connectDatabase(env.mongodbUri);
+      mongoReady = true;
+    } catch (error) {
+      console.warn(`Skipping settings-weights Mongo tests: ${error.message}`);
+    }
+  }, 120000);
+
+  afterAll(async () => {
+    if (mongoReady) {
+      const users = await User.find({ email: { $regex: `^${PREFIX}` } }).select("_id");
+      await LecturerIndicatorWeights.deleteMany({ lecturerId: { $in: users.map((row) => row._id) } });
+      await Course.deleteMany({ lecturerId: { $in: users.map((row) => row._id) } });
+      await User.deleteMany({ email: { $regex: `^${PREFIX}` } });
+    }
+    await disconnectDatabase();
+  });
+
+  test("GET seeds default 30/30/40 and POST creates a new active version", async () => {
+    if (!mongoReady) {
+      return;
+    }
+    const { token } = await seed();
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const first = await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+    expect(first.status).toBe(200);
+    expect(first.body.data.weights.weights.lastActivity).toBe(0.3);
+    expect(first.body.data.weights.weights.assignmentSubmission).toBe(0.4);
+
+    const saved = await request(app)
+      .post("/api/v1/settings/indicator-weights")
+      .set(auth)
+      .send({
+        weights: { lastActivity: 25, materialAccess: 35, assignmentSubmission: 40 },
+        changeNote: "More material emphasis",
+      });
+    expect(saved.status).toBe(201);
+    expect(saved.body.data.weights.version).toBe(2);
+    expect(saved.body.data.weights.weights.materialAccess).toBe(0.35);
+
+    const active = await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+    expect(active.body.data.weights.version).toBe(2);
+  }, 120000);
+
+  test("invalid global weights are rejected", async () => {
+    if (!mongoReady) {
+      return;
+    }
+    const { token } = await seed();
+    const response = await request(app)
+      .post("/api/v1/settings/indicator-weights")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ weights: { lastActivity: 30, materialAccess: 30, assignmentSubmission: 30 } });
+    expect(response.status).toBe(400);
+  }, 120000);
+});
