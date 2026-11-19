@@ -62,7 +62,6 @@ export default function ForgotPasswordPage() {
           {hint ? <p className="panel-desc">{hint}</p> : null}
           {resetUrl ? (
             <p className="auth-switch">
-              {hint ? null : "Email is not required in this local environment. "}
               <a href={resetUrl}>Open reset link</a>
             </p>
           ) : null}

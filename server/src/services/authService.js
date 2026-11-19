@@ -140,13 +140,14 @@ export async function requestPasswordReset(email) {
   const resetUrl = buildResetUrl(rawToken);
   const delivery = await deliverPasswordResetEmail(user.email, resetUrl);
 
-  const exposeResetLink =
-    env.nodeEnv !== "production" || !delivery.sent;
+  const exposeResetLink = env.nodeEnv !== "production" || !delivery.sent;
   if (exposeResetLink) {
     response.resetUrl = resetUrl;
-    if (env.nodeEnv === "production" && !delivery.sent) {
+    if (!delivery.sent) {
       response.hint =
-        "Email could not be delivered from this server. Use the reset link below to choose a new password.";
+        "We could not send email from this server. Use the reset link below to reset your password (valid for 30 minutes).";
+    } else if (env.nodeEnv !== "production") {
+      response.hint = "Development only: use the reset link below if you did not receive email.";
     }
   }
 
