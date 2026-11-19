@@ -12,13 +12,15 @@ function getTransporter() {
     return null;
   }
   if (!transporter) {
+    const useSmtps = env.smtpPort === 465;
     transporter = nodemailer.createTransport({
       host: env.smtpHost,
       port: env.smtpPort,
-      secure: env.smtpPort === 465,
-      connectionTimeout: 8_000,
-      greetingTimeout: 8_000,
-      socketTimeout: 12_000,
+      secure: useSmtps,
+      requireTLS: !useSmtps,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: env.smtpUser,
         pass: env.smtpPass,
@@ -28,22 +30,38 @@ function getTransporter() {
   return transporter;
 }
 
+function mailFromAddress() {
+  const from = env.mailFrom?.trim();
+  if (from) {
+    return from;
+  }
+  return env.smtpUser;
+}
+
 export async function sendMail({ to, subject, text, html, replyTo }) {
   const mailer = getTransporter();
   if (!mailer) {
     return { sent: false, reason: "not_configured" };
   }
 
-  const info = await mailer.sendMail({
-    from: env.mailFrom,
-    to,
-    replyTo: replyTo || undefined,
-    subject,
-    text,
-    html,
-  });
-
-  return { sent: true, messageId: info?.messageId || null };
+  try {
+    const info = await mailer.sendMail({
+      from: mailFromAddress(),
+      to,
+      replyTo: replyTo || undefined,
+      subject,
+      text,
+      html,
+    });
+    return { sent: true, messageId: info?.messageId || null };
+  } catch (error) {
+    console.error("Mail send failed:", error.code || "unknown", error.message || "no message");
+    return {
+      sent: false,
+      reason: "smtp_error",
+      code: error.code || null,
+    };
+  }
 }
 
 export async function sendPasswordResetEmail(to, resetUrl) {
