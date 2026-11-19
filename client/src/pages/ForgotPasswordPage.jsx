@@ -7,6 +7,7 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [resetUrl, setResetUrl] = useState("");
+  const [hint, setHint] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(event) {
@@ -14,6 +15,7 @@ export default function ForgotPasswordPage() {
     setError("");
     setMessage("");
     setResetUrl("");
+    setHint("");
     setSubmitting(true);
     try {
       const result = await apiRequest("/api/v1/auth/forgot-password", {
@@ -21,6 +23,9 @@ export default function ForgotPasswordPage() {
         body: { email },
       });
       setMessage(result.data.message);
+      if (result.data.hint) {
+        setHint(result.data.hint);
+      }
       if (result.data.resetUrl) {
         setResetUrl(result.data.resetUrl);
       }
@@ -54,9 +59,10 @@ export default function ForgotPasswordPage() {
             </p>
           ) : null}
           {message ? <p role="status">{message}</p> : null}
+          {hint ? <p className="panel-desc">{hint}</p> : null}
           {resetUrl ? (
             <p className="auth-switch">
-              Email is not required in this local environment.{" "}
+              {hint ? null : "Email is not required in this local environment. "}
               <a href={resetUrl}>Open reset link</a>
             </p>
           ) : null}

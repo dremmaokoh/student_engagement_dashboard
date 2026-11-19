@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import { HttpError } from "../utils/httpError.js";
 import { toPublicUser } from "../utils/publicUser.js";
 import {
+  isMailConfigured,
   sendPasswordChangedEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
@@ -103,7 +104,25 @@ export async function getCurrentUser(userId) {
   return toPublicUser(user);
 }
 
+async function deliverPasswordResetEmail(to, resetUrl) {
+  if (!isMailConfigured()) {
+    return { sent: false, reason: "not_configured" };
+  }
+  try {
+    const result = await Promise.race([
+      sendPasswordResetEmail(to, resetUrl),
+      new Promise((resolve) => {
+        setTimeout(() => resolve({ sent: false, reason: "timeout" }), 12_000);
+      }),
+    ]);
+    return result;
+  } catch {
+    return { sent: false, reason: "error" };
+  }
+}
+
 export async function requestPasswordReset(email) {
+  await ensureDatabaseConnection();
   const response = { message: RESET_MESSAGE };
   const user = await User.findOne({ email }).select(
     "+passwordResetTokenHash +passwordResetExpires",
@@ -119,20 +138,23 @@ export async function requestPasswordReset(email) {
   await user.save();
 
   const resetUrl = buildResetUrl(rawToken);
-  try {
-    await sendPasswordResetEmail(user.email, resetUrl);
-  } catch {
-    // Still succeed with a generic message so account existence is not leaked.
-  }
+  const delivery = await deliverPasswordResetEmail(user.email, resetUrl);
 
-  if (env.nodeEnv !== "production") {
+  const exposeResetLink =
+    env.nodeEnv !== "production" || !delivery.sent;
+  if (exposeResetLink) {
     response.resetUrl = resetUrl;
+    if (env.nodeEnv === "production" && !delivery.sent) {
+      response.hint =
+        "Email could not be delivered from this server. Use the reset link below to choose a new password.";
+    }
   }
 
   return response;
 }
 
 export async function resetPassword({ token, password }) {
+  await ensureDatabaseConnection();
   const tokenHash = hashResetToken(token);
   const user = await User.findOne({
     passwordResetTokenHash: tokenHash,
