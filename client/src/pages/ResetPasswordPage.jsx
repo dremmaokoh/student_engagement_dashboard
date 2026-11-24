@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import PasswordField from "../components/design/PasswordField.jsx";
+import AuthLayout from "../components/layout/AuthLayout.jsx";
 import { apiRequest } from "../services/api.js";
+
+const pageCopy = {
+  eyebrow: "Account recovery",
+  title: "Set a new password",
+  description: "Choose a password of at least 8 characters.",
+};
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -38,41 +45,36 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section className="card auth-card">
-        <div className="brand-bar" aria-hidden="true" />
-        <h1>Set a new password</h1>
-        <p className="lede">Choose a password of at least 8 characters.</p>
-        <form onSubmit={onSubmit} className="auth-form">
-          <PasswordField
-            id="password"
-            name="password"
-            label="New password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            minLength={8}
-          />
-          <PasswordField
-            id="confirmPassword"
-            name="confirmPassword"
-            label="Confirm password"
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            minLength={8}
-          />
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button type="submit" className="primary-btn" disabled={submitting}>
-            {submitting ? "Updating…" : "Update password"}
-          </button>
-        </form>
-        <p className="auth-switch">
-          <Link to="/login">Back to sign in</Link>
-        </p>
-      </section>
-    </main>
+    <AuthLayout {...pageCopy}>
+      <form onSubmit={onSubmit} className="auth-form">
+        <PasswordField
+          id="password"
+          name="password"
+          label="New password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          minLength={8}
+        />
+        <PasswordField
+          id="confirmPassword"
+          name="confirmPassword"
+          label="Confirm password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          minLength={8}
+        />
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <button type="submit" className="primary-btn auth-submit" disabled={submitting}>
+          {submitting ? "Updating…" : "Update password"}
+        </button>
+      </form>
+      <p className="auth-switch">
+        <Link to="/login">Back to sign in</Link>
+      </p>
+    </AuthLayout>
   );
 }

@@ -2,7 +2,14 @@ import { useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import LoadingState from "../components/common/LoadingState.jsx";
 import PasswordField from "../components/design/PasswordField.jsx";
+import AuthLayout from "../components/layout/AuthLayout.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
+
+const pageCopy = {
+  eyebrow: "Lecturer portal",
+  title: "Welcome back!",
+  description: "Lecturer access to the Student Engagement Dashboard.",
+};
 
 export default function LoginPage() {
   const { login, isAuthenticated, loading, registrationEnabled } = useAuth();
@@ -15,11 +22,9 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <main className="auth-page">
-        <section className="card auth-card">
-          <LoadingState loading variant="section" size="lg" delay={80} message="Preparing sign in…" />
-        </section>
-      </main>
+      <AuthLayout {...pageCopy}>
+        <LoadingState loading variant="section" size="lg" delay={80} message="Preparing sign in…" />
+      </AuthLayout>
     );
   }
 
@@ -42,12 +47,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section className="card auth-card">
-        <div className="brand-bar" aria-hidden="true" />
-        <h1>Sign in</h1>
-        <p className="lede">Lecturer access to the Student Engagement Dashboard.</p>
-        <form onSubmit={onSubmit} className="auth-form">
+    <AuthLayout {...pageCopy}>
+      <form onSubmit={onSubmit} className="auth-form">
+        <div className="auth-field">
           <label htmlFor="email">Email</label>
           <input
             id="email"
@@ -58,35 +60,36 @@ export default function LoginPage() {
             onChange={(event) => setEmail(event.target.value)}
             required
           />
-          <PasswordField
-            id="password"
-            name="password"
-            label="Password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          {resetNotice ? <p role="status">Password updated. Sign in with your new password.</p> : null}
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button type="submit" className="primary-btn" disabled={submitting}>
-            {submitting ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-        <p className="auth-switch">
-          <Link to="/forgot-password">Forgot password?</Link>
-        </p>
-        {registrationEnabled ? (
-          <p className="auth-switch">
-            Need an account? <Link to="/register">Create a lecturer profile</Link>
+        </div>
+        <PasswordField
+          id="password"
+          name="password"
+          label="Password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {resetNotice ? <p className="auth-notice" role="status">Password updated. Sign in with your new password.</p> : null}
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
           </p>
+        ) : null}
+        <button type="submit" className="primary-btn auth-submit" disabled={submitting}>
+          {submitting ? "Signing in…" : "Sign In"}
+        </button>
+      </form>
+      <div className="auth-switch">
+        <Link to="/forgot-password">Forgot password?</Link>
+        {registrationEnabled ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <Link to="/register">Create lecturer profile</Link>
+          </>
         ) : (
-          <p className="auth-switch">Registration is disabled. Use a seeded lecturer account.</p>
+          <span>Registration is disabled. Use a seeded lecturer account.</span>
         )}
-      </section>
-    </main>
+      </div>
+    </AuthLayout>
   );
 }

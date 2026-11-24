@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import AuthLayout from "../components/layout/AuthLayout.jsx";
 import { apiRequest } from "../services/api.js";
+
+const pageCopy = {
+  eyebrow: "Account recovery",
+  title: "Forgot password",
+  description: "Enter your lecturer email. If it is registered, we will send a reset link.",
+};
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -37,12 +44,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section className="card auth-card">
-        <div className="brand-bar" aria-hidden="true" />
-        <h1>Forgot password</h1>
-        <p className="lede">Enter your lecturer email. If it is registered, we will send a reset link.</p>
-        <form onSubmit={onSubmit} className="auth-form">
+    <AuthLayout {...pageCopy}>
+      <form onSubmit={onSubmit} className="auth-form">
+        <div className="auth-field">
           <label htmlFor="email">Email</label>
           <input
             id="email"
@@ -53,26 +57,26 @@ export default function ForgotPasswordPage() {
             onChange={(event) => setEmail(event.target.value)}
             required
           />
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {message ? <p role="status">{message}</p> : null}
-          {hint ? <p className="panel-desc">{hint}</p> : null}
-          {resetUrl ? (
-            <p className="auth-switch">
-              <a href={resetUrl}>Open reset link</a>
-            </p>
-          ) : null}
-          <button type="submit" className="primary-btn" disabled={submitting}>
-            {submitting ? "Sending…" : "Send reset link"}
-          </button>
-        </form>
-        <p className="auth-switch">
-          <Link to="/login">Back to sign in</Link>
-        </p>
-      </section>
-    </main>
+        </div>
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {message ? <p className="auth-notice" role="status">{message}</p> : null}
+        {hint ? <p className="auth-description auth-hint">{hint}</p> : null}
+        {resetUrl ? (
+          <p className="auth-switch">
+            <a href={resetUrl}>Open reset link</a>
+          </p>
+        ) : null}
+        <button type="submit" className="primary-btn auth-submit" disabled={submitting}>
+          {submitting ? "Sending…" : "Send reset link"}
+        </button>
+      </form>
+      <p className="auth-switch">
+        <Link to="/login">Back to sign in</Link>
+      </p>
+    </AuthLayout>
   );
 }
