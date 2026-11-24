@@ -1432,7 +1432,8 @@ a.secondary-btn {
 
   .auth-carousel__kicker {
     margin-bottom: 10px;
-    font-size: 0.64rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
   }
 
   .auth-carousel__slides {
@@ -6273,6 +6274,25 @@ details.card > summary h2 {
 
 .settings-example-table {
   margin-top: var(--space-1);
+}
+
+@media (max-width: 560px) {
+  .settings-example-table {
+    table-layout: fixed;
+    font-size: 0.8rem;
+  }
+
+  .settings-example-table th,
+  .settings-example-table td {
+    padding: 8px 6px;
+    overflow-wrap: anywhere;
+  }
+
+  .settings-example-table .col-serial {
+    width: 34px;
+    min-width: 34px;
+    padding-inline: 4px;
+  }
 }
 
 .settings-course-filter {
