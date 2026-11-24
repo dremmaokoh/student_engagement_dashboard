@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import { returnNavigationState } from "../lib/returnNavigation.js";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import { apiRequest, downloadAuthenticated } from "../services/api.js";
@@ -128,7 +129,7 @@ export default function CoursesPage() {
             Download template
           </button>
           <label className="primary-btn file-btn courses-import-btn">
-            {importing ? "Working…" : "Import courses"}
+            {importing ? "Importing…" : "Import courses"}
             <input type="file" accept=".csv,text/csv" hidden disabled={importing} onChange={onPreviewFile} />
           </label>
           {!showAdd ? (
@@ -254,11 +255,13 @@ export default function CoursesPage() {
           </button>
         </form>
 
-        {loading ? (
-          <p className="courses-table-loading" role="status">
-            Loading courses…
-          </p>
-        ) : null}
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          rows={6}
+          columns={6}
+          label="Fetching course information…"
+        />
         {!loading && courses.length === 0 ? (
           <div className="students-empty students-empty-compact">
             <strong>No courses yet</strong>
@@ -281,6 +284,7 @@ export default function CoursesPage() {
             <table className="data-table courses-directory-table">
               <thead>
                 <tr>
+                  <th className="col-serial">S/N</th>
                   <th className="courses-col-code">Code</th>
                   <th className="courses-col-name">Course</th>
                   <th className="courses-col-students">Students</th>
@@ -289,8 +293,9 @@ export default function CoursesPage() {
                 </tr>
               </thead>
               <tbody>
-                {courses.map((course) => (
+                {courses.map((course, index) => (
                   <tr key={course.id}>
+                    <td className="col-serial">{index + 1}</td>
                     <td className="courses-col-code">
                       <span className="course-code-cell">{course.code}</span>
                     </td>

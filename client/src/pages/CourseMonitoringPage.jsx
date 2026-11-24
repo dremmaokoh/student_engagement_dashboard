@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import LoadingState from "../components/common/LoadingState.jsx";
 import CourseActivityImportModal from "../components/courses/CourseActivityImportModal.jsx";
 import CourseConfigurationModal from "../components/courses/CourseConfigurationModal.jsx";
 import CourseEnrolmentModal from "../components/courses/CourseEnrolmentModal.jsx";
@@ -15,6 +17,7 @@ import { formatRunTitle } from "../lib/classificationRuns.js";
 import { courseOverviewPath, courseResultsPath, readCoursePeriod } from "../lib/coursePeriod.js";
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
+import { serialNumber } from "../lib/serialNumber.js";
 import { apiRequest } from "../services/api.js";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -56,6 +59,7 @@ export default function CourseMonitoringPage() {
   const [enrolModalOpen, setEnrolModalOpen] = useState(false);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [preparedPeriod, setPreparedPeriod] = useState(null);
+  const isActiveRef = useRef(true);
 
   const monitoringPath = `${location.pathname}${location.search}`;
   const returnState = returnNavigationState(monitoringPath, "Back to Monitoring");
@@ -143,6 +147,9 @@ export default function CourseMonitoringPage() {
         rosterParams.set("classification", classification);
       }
       const enrolled = await apiRequest(`/api/v1/courses/${courseId}/students?${rosterParams.toString()}`);
+      if (!isActiveRef.current) {
+        return;
+      }
       setCourse(courseResult.data.course);
       setDashboard(dash.data);
       setRoster({
@@ -153,14 +160,23 @@ export default function CourseMonitoringPage() {
         totalPages: enrolled.data.totalPages,
       });
     } catch (err) {
+      if (!isActiveRef.current) {
+        return;
+      }
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (isActiveRef.current) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
+    isActiveRef.current = true;
     load();
+    return () => {
+      isActiveRef.current = false;
+    };
   }, [
     courseId,
     appliedPeriod.periodStart,
@@ -229,9 +245,15 @@ export default function CourseMonitoringPage() {
             periodEnd: String(effectivePeriod.monitoringPeriodEnd || importModalPeriod.periodEnd).slice(0, 10),
           }
         : importModalPeriod;
+      if (!isActiveRef.current) {
+        return;
+      }
       setResultsLinkPeriod(periodForNav);
       syncUrlPeriod(periodForNav);
       await load(periodForNav);
+      if (!isActiveRef.current) {
+        return;
+      }
       const generatedCount = result.data?.generatedCount ?? 0;
       const counts = result.data?.counts || {};
       const runTitle = formatRunTitle(course?.code, savedRunName || runName);
@@ -246,16 +268,21 @@ export default function CourseMonitoringPage() {
         navigate(courseResultsPath(courseId, { ...periodForNav, runId }));
       }
     } catch (err) {
+      if (!isActiveRef.current) {
+        return;
+      }
       setError(err.message);
     } finally {
-      setGenerating(false);
+      if (isActiveRef.current) {
+        setGenerating(false);
+      }
     }
   }
 
   if (loading && !course) {
     return (
       <main className="content course-monitoring-page">
-        <p className="lede">Loading monitoring workspace…</p>
+        <LoadingState loading variant="page" size="lg" message="Preparing monitoring workspace…" />
       </main>
     );
   }
@@ -364,7 +391,7 @@ export default function CourseMonitoringPage() {
         ) : null}
       </section>
 
-      <LatestImportSummary latestImport={dashboard?.latestImport} loading={loading} />
+      {!loading ? <LatestImportSummary latestImport={dashboard?.latestImport} loading={false} /> : null}
 
       <section className="card course-students-roster-card">
         <div className="course-students-roster-head">
@@ -429,7 +456,13 @@ export default function CourseMonitoringPage() {
           ))}
         </div>
 
-        {loading ? <p className="course-overview-table-loading">Loading roster…</p> : null}
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          rows={6}
+          columns={7}
+          label="Loading roster…"
+        />
         {!loading && roster.items.length === 0 ? (
           <div className="students-empty students-empty-compact">
             <strong>No students to show</strong>
@@ -445,6 +478,7 @@ export default function CourseMonitoringPage() {
             <table className="data-table students-directory-table course-students-roster-table">
               <thead>
                 <tr>
+                  <th className="col-serial">S/N</th>
                   <th>Student Name</th>
                   <th className="course-overview-col-id">Student ID</th>
                   <th className="course-overview-col-score">Engagement Score</th>
@@ -453,11 +487,14 @@ export default function CourseMonitoringPage() {
                 </tr>
               </thead>
               <tbody>
-                {roster.items.map((row) => {
+                {roster.items.map((row, index) => {
                   const detailPath = studentDetailPath(row.student?.id || row.studentId);
                   const hasResult = Boolean(row.resultId || row.classification);
                   return (
                     <tr key={row.id} className={row.classification ? `row-status-${row.classification}` : undefined}>
+                      <td className="col-serial">
+                        {serialNumber(index, { page: roster.page, limit: roster.limit })}
+                      </td>
                       <td className="students-col-name">
                         <span className="student-name" title={row.student?.fullName}>
                           {row.student?.fullName}
@@ -572,9 +609,15 @@ export default function CourseMonitoringPage() {
         open={enrolModalOpen}
         onClose={() => setEnrolModalOpen(false)}
         courseId={courseId}
-        onEnrolled={() => {
+        courseCode={course?.code}
+        onEnrolled={(enrolledCount = 1, failedCount = 0) => {
           load();
-          setSuccess("Student enrolled in this course.");
+          const enrolledLabel = `${enrolledCount} student${enrolledCount === 1 ? "" : "s"}`;
+          setSuccess(
+            failedCount > 0
+              ? `${enrolledLabel} enrolled in this course; ${failedCount} could not be enrolled.`
+              : `${enrolledLabel} enrolled in this course.`,
+          );
         }}
       />
       <CourseGenerateClassificationModal

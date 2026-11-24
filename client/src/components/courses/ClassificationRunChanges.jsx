@@ -1,3 +1,4 @@
+import LoadingState from "../common/LoadingState.jsx";
 import { buildChangesSincePreviousCopy } from "../../lib/classificationRuns.js";
 
 export default function ClassificationRunChanges({ latestRun, previousRun, loading }) {
@@ -5,7 +6,7 @@ export default function ClassificationRunChanges({ latestRun, previousRun, loadi
     return (
       <section className="card course-overview-section course-overview-changes" aria-labelledby="changes-heading">
         <h2 id="changes-heading">Changes since previous classification</h2>
-        <p className="course-overview-table-loading">Loading…</p>
+        <LoadingState loading variant="inline" message="Preparing run comparison…" />
       </section>
     );
   }

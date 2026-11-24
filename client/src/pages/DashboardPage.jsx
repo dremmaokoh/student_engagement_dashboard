@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import ClassificationCoverageCard from "../components/dashboard/ClassificationCoverageCard.jsx";
+import ClassificationTrendFilter from "../components/dashboard/ClassificationTrendFilter.jsx";
 import CourseComparison from "../components/dashboard/CourseComparison.jsx";
 import DataFreshnessStrip from "../components/dashboard/DataFreshnessStrip.jsx";
 import DonutChart from "../components/dashboard/DonutChart.jsx";
@@ -10,6 +12,7 @@ import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import SummaryCard from "../components/design/SummaryCard.jsx";
 import StatusIcon from "../components/design/StatusIcon.jsx";
 import { formatScore, INSUFFICIENT_DATA_HELP } from "../lib/classifications.js";
+import { ALL_CLASSIFICATIONS } from "../lib/classificationTrend.js";
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { formatLastRecordedActivity } from "../lib/formatLastActivity.js";
 import {
@@ -19,6 +22,7 @@ import {
   periodFromPreset,
 } from "../lib/periodPresets.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
+import { serialNumber } from "../lib/serialNumber.js";
 import { apiRequest } from "../services/api.js";
 
 const TABLE_LIMIT = 25;
@@ -101,6 +105,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
   const [comparison, setComparison] = useState(null);
   const [trend, setTrend] = useState(null);
+  const [generalTrendFilter, setGeneralTrendFilter] = useState(ALL_CLASSIFICATIONS);
   const [singleCourseRuns, setSingleCourseRuns] = useState([]);
   const [singleCourseRunsLoading, setSingleCourseRunsLoading] = useState(false);
   const [tableRows, setTableRows] = useState(null);
@@ -428,11 +433,7 @@ export default function DashboardPage() {
         </p>
       ) : null}
 
-      {loading ? (
-        <p className="dashboard-loading" role="status">
-          Loading dashboard…
-        </p>
-      ) : null}
+      <LoadingState loading={loading} variant="page" size="lg" message="Preparing your dashboard…" />
 
       {!loading && summary?.state === "no_courses" ? (
         <section className="card empty-state">
@@ -537,11 +538,15 @@ export default function DashboardPage() {
             />
           ) : (
             <section className="card dashboard-panel course-overview-section" aria-labelledby="dashboard-trend-heading">
-              <h2 id="dashboard-trend-heading">Classification trend</h2>
+              <div className="classification-trend-card-head">
+                <h2 id="dashboard-trend-heading">Classification trend</h2>
+                <ClassificationTrendFilter value={generalTrendFilter} onChange={setGeneralTrendFilter} />
+              </div>
               <GeneralOverviewTrendChart
                 trend={trend}
                 loading={loading}
                 coursesInScope={trend?.coursesInScope ?? summary?.courseCount ?? 0}
+                classificationFilter={generalTrendFilter}
               />
             </section>
           )}
@@ -592,7 +597,12 @@ export default function DashboardPage() {
                     Clear table filters
                   </button>
                 ) : null}
-                {tableLoading ? <span className="muted followup-loading">Updating table…</span> : null}
+                <LoadingState
+                  loading={tableLoading}
+                  variant="inline"
+                  size="sm"
+                  message="Refreshing engagement table…"
+                />
               </form>
             ) : null}
 
@@ -641,6 +651,7 @@ export default function DashboardPage() {
                   <table className="data-table attention-table">
                     <thead>
                       <tr>
+                        <th className="col-serial">S/N</th>
                         <th>Student</th>
                         <th>Student ID</th>
                         <th>Course</th>
@@ -651,8 +662,11 @@ export default function DashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((item) => (
+                      {items.map((item, index) => (
                         <tr key={item.id} className={`row-status-${item.classification}`}>
+                          <td data-label="S/N" className="col-serial">
+                            {serialNumber(index, { page: tablePage, limit: TABLE_LIMIT })}
+                          </td>
                           <td data-label="Student">
                             <span className="student-name">{item.student?.fullName}</span>
                           </td>

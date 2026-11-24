@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import LoadingState from "../common/LoadingState.jsx";
 import ConfigurationReadOnlyPanel from "../settings/ConfigurationReadOnlyPanel.jsx";
 import { apiRequest } from "../../services/api.js";
 import { courseMonitoringPath } from "../../lib/coursePeriod.js";
@@ -74,7 +75,7 @@ export default function CourseConfigurationModal({ open, onClose, courseId, peri
             {error}
           </p>
         ) : null}
-        {loading ? <p className="muted">Loading configuration…</p> : null}
+        <LoadingState loading={loading} variant="inline" message="Loading configuration…" />
         {!loading ? <ConfigurationReadOnlyPanel config={config} globalWeights={globalWeights} /> : null}
         <div className="modal-actions">
           <Link

@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../features/auth/AuthContext.jsx";
+import LoadingState from "./LoadingState.jsx";
 
 export default function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -9,7 +10,7 @@ export default function ProtectedRoute({ children }) {
     return (
       <main className="page">
         <section className="card">
-          <p className="lede">Checking your session…</p>
+          <LoadingState loading variant="section" size="lg" delay={80} message="Preparing your workspace…" />
         </section>
       </main>
     );

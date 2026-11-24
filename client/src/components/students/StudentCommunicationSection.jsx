@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LoadingState from "../common/LoadingState.jsx";
 import ViewStudentMessageModal from "./ViewStudentMessageModal.jsx";
 
 function statusLabel(status) {
@@ -39,15 +40,13 @@ export default function StudentCommunicationSection({ communications, loading, o
           Send message
         </button>
       </div>
-      {loading ? (
-        <p className="muted" role="status">
-          Loading message history…
-        </p>
-      ) : communications?.length ? (
+      <LoadingState loading={loading} variant="inline" message="Loading message history…" />
+      {!loading && communications?.length ? (
         <div className="table-card table-card-flush student-communication-table-wrap">
           <table className="data-table student-communication-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Sent</th>
                 <th>Subject</th>
                 <th>Course</th>
@@ -56,8 +55,9 @@ export default function StudentCommunicationSection({ communications, loading, o
               </tr>
             </thead>
             <tbody>
-              {communications.map((row) => (
+              {communications.map((row, index) => (
                 <tr key={row.id}>
+                  <td data-label="S/N" className="col-serial">{index + 1}</td>
                   <td data-label="Sent">{dateTimeLabel(row.sentAt)}</td>
                   <td data-label="Subject">
                     <span className="student-communication-subject">{row.subject}</span>

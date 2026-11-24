@@ -10,6 +10,7 @@ const studentSchema = new mongoose.Schema(
 );
 
 studentSchema.index({ matriculationNumber: 1 }, { unique: true });
+studentSchema.index({ email: 1 }, { sparse: true });
 
 const Student = mongoose.models.Student || mongoose.model("Student", studentSchema);
 export default Student;

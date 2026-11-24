@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import LoadingState from "../common/LoadingState.jsx";
 import ClassificationBadge from "../design/ClassificationBadge.jsx";
 import { formatScore } from "../../lib/classifications.js";
 import { courseMonitoringPath } from "../../lib/coursePeriod.js";
@@ -30,7 +31,7 @@ export default function StudentsNeedingAttention({
         </Link>
       </div>
 
-      {loading ? <p className="course-overview-table-loading">Loading…</p> : null}
+      <LoadingState loading={loading} variant="inline" message="Loading student records…" />
       {!loading && items.length === 0 ? (
         <p className="course-overview-attention-empty">No students currently require attention.</p>
       ) : null}
@@ -39,6 +40,7 @@ export default function StudentsNeedingAttention({
           <table className="data-table students-directory-table course-overview-attention-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Student</th>
                 <th className="course-overview-col-id">Student ID</th>
                 <th className="course-overview-col-score">Engagement Score</th>
@@ -47,10 +49,11 @@ export default function StudentsNeedingAttention({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => {
+              {items.map((item, index) => {
                 const detailPath = studentDetailPath(item.studentId);
                 return (
                   <tr key={item.id} className={`row-status-${item.classification}`}>
+                    <td className="col-serial">{index + 1}</td>
                     <td className="students-col-name">
                       <span className="student-name" title={item.student?.fullName}>
                         {item.student?.fullName}

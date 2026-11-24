@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import PasswordField from "../components/design/PasswordField.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
 import { apiRequest } from "../services/api.js";
@@ -24,7 +25,7 @@ export default function RegisterPage() {
     return (
       <main className="auth-page">
         <section className="card auth-card">
-          <p className="lede">Loading…</p>
+          <LoadingState loading variant="section" size="lg" delay={80} message="Preparing registration…" />
         </section>
       </main>
     );

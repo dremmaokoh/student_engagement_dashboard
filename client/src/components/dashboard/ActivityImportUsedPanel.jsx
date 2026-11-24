@@ -1,3 +1,5 @@
+import LoadingState from "../common/LoadingState.jsx";
+
 function formatTimestamp(value) {
   if (!value) {
     return "—";
@@ -22,7 +24,7 @@ export default function ActivityImportUsedPanel({ importUsed, hasRun, loading })
       <p className="panel-desc course-overview-provenance-lede">
         This activity dataset was used to generate the classification results currently displayed.
       </p>
-      {loading ? <p className="muted course-overview-provenance-empty">Loading import details…</p> : null}
+      <LoadingState loading={loading} variant="inline" message="Loading import details…" />
       {!loading && !hasRun ? (
         <p className="course-overview-provenance-empty">
           No classification run for this monitoring period. Import activity and generate classifications to see data

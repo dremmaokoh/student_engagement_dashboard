@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import ScoreBar from "../components/dashboard/ScoreBar.jsx";
@@ -157,7 +158,7 @@ export default function CourseResultDetailPage() {
   if (loading) {
     return (
       <main className="content">
-        <p className="lede">Loading evidence…</p>
+        <LoadingState loading variant="page" size="lg" message="Retrieving assessment evidence…" />
       </main>
     );
   }
@@ -244,6 +245,7 @@ export default function CourseResultDetailPage() {
               <caption>Indicator Breakdown</caption>
               <thead>
                 <tr>
+                  <th scope="col" className="col-serial">S/N</th>
                   <th scope="col">Indicator</th>
                   <th scope="col">Calculated Score</th>
                   <th scope="col">Weight</th>
@@ -251,13 +253,11 @@ export default function CourseResultDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {INDICATOR_KEYS.map((key) => {
+                {INDICATOR_KEYS.filter((key) => indicators[key]).map((key, index) => {
                   const indicator = indicators[key];
-                  if (!indicator) {
-                    return null;
-                  }
                   return (
                     <tr key={key}>
+                      <td className="col-serial">{index + 1}</td>
                       <th scope="row">
                         <span className={`result-table-indicator result-accent-${key}`}>
                           <span className="result-table-dot" aria-hidden="true" />
@@ -273,6 +273,7 @@ export default function CourseResultDetailPage() {
               </tbody>
               <tfoot>
                 <tr>
+                  <td className="col-serial" aria-hidden="true" />
                   <th scope="row" colSpan="3">
                     Overall Score (Σ Weighted Scores)
                   </th>

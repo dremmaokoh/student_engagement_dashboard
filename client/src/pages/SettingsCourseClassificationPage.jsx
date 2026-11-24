@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
@@ -107,9 +108,7 @@ export default function SettingsCourseClassificationPage() {
   if (loading) {
     return (
       <main className="content">
-        <p className="lede" role="status">
-          Loading course classification settings…
-        </p>
+        <LoadingState loading variant="page" size="lg" message="Loading classification settings…" />
       </main>
     );
   }
@@ -147,6 +146,7 @@ export default function SettingsCourseClassificationPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Min days</th>
                 <th>Max days</th>
                 <th>Score</th>
@@ -155,6 +155,7 @@ export default function SettingsCourseClassificationPage() {
             <tbody>
               {form.bands.map((band, index) => (
                 <tr key={`${band.minDays}-${index}`}>
+                  <td className="col-serial">{index + 1}</td>
                   <td>
                     <input
                       aria-label={`Band ${index + 1} min days`}
@@ -266,6 +267,7 @@ export default function SettingsCourseClassificationPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Version</th>
                 <th>Active</th>
                 <th>Boundaries</th>
@@ -274,8 +276,9 @@ export default function SettingsCourseClassificationPage() {
               </tr>
             </thead>
             <tbody>
-              {versions.map((item) => (
+              {versions.map((item, index) => (
                 <tr key={item.id}>
+                  <td className="col-serial">{index + 1}</td>
                   <td>v{item.version}</td>
                   <td>{item.isActive ? "Yes" : "No"}</td>
                   <td>

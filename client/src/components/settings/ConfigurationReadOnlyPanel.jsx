@@ -36,14 +36,16 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
         <table className="data-table settings-compact-table">
           <thead>
             <tr>
+              <th className="col-serial">S/N</th>
               <th>Min days</th>
               <th>Max days</th>
               <th>Score</th>
             </tr>
           </thead>
           <tbody>
-            {config.lastActivityBands.map((band) => (
+            {config.lastActivityBands.map((band, index) => (
               <tr key={`${band.minDays}-${band.score}`}>
+                <td className="col-serial">{index + 1}</td>
                 <td>{band.minDays}</td>
                 <td>{band.maxDays ?? "No limit"}</td>
                 <td>{band.score}</td>
@@ -72,14 +74,23 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
       <section className="settings-config-block">
         <h3>Final classification boundaries</h3>
         <table className="data-table settings-compact-table">
+          <thead>
+            <tr>
+              <th className="col-serial">S/N</th>
+              <th>Classification</th>
+              <th>Score range</th>
+            </tr>
+          </thead>
           <tbody>
             <tr>
+              <td className="col-serial">1</td>
               <th scope="row">
                 <ClassificationBadge classification="ACTIVE" /> Active
               </th>
               <td>≥ {config.classificationBoundaries.activeMin}</td>
             </tr>
             <tr>
+              <td className="col-serial">2</td>
               <th scope="row">
                 <ClassificationBadge classification="REQUIRING_ATTENTION" /> Requiring Attention
               </th>
@@ -89,6 +100,7 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
               </td>
             </tr>
             <tr>
+              <td className="col-serial">3</td>
               <th scope="row">
                 <ClassificationBadge classification="INACTIVE" /> Inactive
               </th>

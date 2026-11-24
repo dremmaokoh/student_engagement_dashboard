@@ -1,3 +1,5 @@
+import LoadingState from "../common/LoadingState.jsx";
+
 function formatTimestamp(value) {
   if (!value) {
     return "—";
@@ -25,7 +27,7 @@ export default function LatestImportSummary({ latestImport, loading }) {
           period — prepare another template and import when you need a different period.
         </p>
       </div>
-      {loading ? <p className="muted course-monitoring-import-loading">Loading…</p> : null}
+      <LoadingState loading={loading} variant="inline" message="Loading import details…" />
       {!loading && !latestImport ? (
         <p className="course-monitoring-import-empty">
           No confirmed activity import yet. Download an activity template, add activity data, then import the file.

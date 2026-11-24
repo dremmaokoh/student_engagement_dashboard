@@ -1,31 +1,42 @@
 :root {
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+  /* Blue brand system */
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
   --color-secondary: #3b82f6;
   --color-brand-tint: #eff6ff;
+  --color-brand-soft: #dbeafe;
+  --color-brand-deep: #0f2f6b;
+  --color-navy-950: #06142e;
+  --color-navy-900: #0a1f48;
+  --color-navy-800: #10306a;
+  --color-blue-700: #1d4ed8;
+  --color-blue-600: #2563eb;
+  --color-blue-500: #3b82f6;
+  --color-blue-300: #93c5fd;
+
   --color-accent: #facc15;
   --color-accent-muted: #fbbf24;
   --color-accent-tint: #fef9c3;
   --color-gold: var(--color-accent);
-  --color-background: #f8fafc;
+  --color-background: #f4f7fc;
   --color-surface: #ffffff;
-  --color-surface-subtle: #f1f5f9;
+  --color-surface-subtle: #f7f9fc;
   --color-text: #0f172a;
-  --color-text-secondary: #64748b;
-  --color-border: #e2e8f0;
-  --color-border-subtle: #e8edf3;
+  --color-text-secondary: #5c6b82;
+  --color-border: #dfe7f2;
+  --color-border-subtle: #e8eef7;
   --color-surface-raised: #ffffff;
-  --color-focus: #2563eb;
-  --color-brand-indigo: #4f46e5;
-  --color-brand-deep: #1e3a8a;
-  --gradient-brand: linear-gradient(135deg, #2563eb 0%, #4f46e5 52%, #3730a3 100%);
-  --gradient-brand-soft: linear-gradient(180deg, #eff6ff 0%, #f8fafc 55%, #ffffff 100%);
-  --gradient-workspace-hero: linear-gradient(
-    95deg,
-    #eff6ff 0%,
-    #ffffff 45%,
-    #fefce8 100%
-  );
+  --color-focus: #1d4ed8;
+  --color-focus-ring: rgba(37, 99, 235, 0.18);
+  --color-brand-indigo: #4338ca;
+
+  --gradient-brand: linear-gradient(135deg, #1d4ed8 0%, #2563eb 52%, #3b82f6 100%);
+  --gradient-brand-soft: linear-gradient(180deg, #eff6ff 0%, #f8fbff 55%, #ffffff 100%);
+  --gradient-sidebar: radial-gradient(circle at 82% 24%, rgba(59, 130, 246, 0.1), transparent 38%),
+    radial-gradient(circle at 8% 4%, rgba(59, 130, 246, 0.34), transparent 32%),
+    radial-gradient(circle at 92% 96%, rgba(30, 64, 175, 0.5), transparent 42%),
+    linear-gradient(165deg, #06142e 0%, #0a2452 48%, #123c82 100%);
+  --gradient-workspace-hero: linear-gradient(95deg, #eff6ff 0%, #ffffff 58%, #dbeafe 100%);
 
   --color-indicator-login: #3976b9;
   --color-indicator-login-tint: #eaf2fa;
@@ -55,13 +66,27 @@
   --color-status-na-tint: #f1f0f2;
 
   --font-sans: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-page-title: 1.75rem;
+  --line-height-tight: 1.25;
+  --letter-spacing-tight: -0.02em;
+
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 14px;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.04);
-  --shadow-dashboard: 0 1px 2px rgba(15, 23, 42, 0.05), 0 6px 18px rgba(15, 23, 42, 0.06);
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.05);
+  --shadow-dashboard: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 22px rgba(15, 23, 42, 0.06);
+  --shadow-elevated: 0 18px 48px rgba(6, 20, 46, 0.18);
+  --transition-ui: 140ms ease;
+  --transition-loading: 180ms ease;
+  --loading-delay: 180ms;
+  --skeleton-duration: 1.4s;
   --dashboard-section-gap: 22px;
-  --dashboard-card-padding: 18px;
+  --dashboard-card-padding: 20px;
 
   /* Spacing scale */
   --spacing-1: 4px;
@@ -89,8 +114,9 @@
   /* Shared control metrics */
   --control-padding-y: var(--spacing-3);
   --control-padding-x: var(--spacing-4);
+  /* Shared compact table density (Result / History reference). */
   --table-cell-padding-y: var(--spacing-3);
-  --table-cell-padding-x: var(--spacing-4);
+  --table-cell-padding-x: var(--spacing-3);
 
   /* Main workspace (shell content column; sidebar is fixed at 260px) */
   --layout-content-max: 1760px;

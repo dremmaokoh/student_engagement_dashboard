@@ -10,6 +10,11 @@ import {
   confirmCourseRosterImport,
   previewCourseRosterImport,
 } from "../services/import/courseRosterImportService.js";
+import {
+  buildCourseStudentCsvTemplate,
+  confirmCourseStudentImport,
+  previewCourseStudentImport,
+} from "../services/import/courseStudentImportService.js";
 import { sendCsvDownload } from "../utils/csvDownload.js";
 
 export async function downloadTemplate(req, res) {
@@ -64,5 +69,25 @@ export async function previewCourseRoster(req, res) {
 
 export async function confirmCourseRoster(req, res) {
   const data = await confirmCourseRosterImport(req.user.id, req.body?.importId);
+  res.json({ data });
+}
+
+export async function downloadCourseStudentTemplate(req, res) {
+  const body = buildCourseStudentCsvTemplate(req.course);
+  sendCsvDownload(res, `${String(req.course.code || "course").replace(/[^\w.-]+/g, "_")}-students-template.csv`, body);
+}
+
+export async function previewCourseStudents(req, res) {
+  const data = await previewCourseStudentImport(
+    req.user.id,
+    req.course._id,
+    req.file?.buffer,
+    req.file?.originalname,
+  );
+  res.status(201).json({ data });
+}
+
+export async function confirmCourseStudents(req, res) {
+  const data = await confirmCourseStudentImport(req.user.id, req.course._id, req.body?.importId);
   res.json({ data });
 }

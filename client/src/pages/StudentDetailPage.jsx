@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import SendStudentMessageModal from "../components/students/SendStudentMessageModal.jsx";
@@ -112,14 +113,7 @@ export default function StudentDetailPage() {
   if (loading) {
     return (
       <main className="content student-detail-page">
-        <p className="lede" role="status">
-          Loading student profile…
-        </p>
-        <div className="students-skeleton student-detail-skeleton" aria-hidden="true">
-          <div className="skeleton-bar skeleton-bar-lg" />
-          <div className="skeleton-bar" />
-          <div className="skeleton-bar" />
-        </div>
+        <ContentSkeleton loading variant="lines" rows={4} label="Loading student profile…" />
       </main>
     );
   }
@@ -214,6 +208,7 @@ export default function StudentDetailPage() {
             <table className="data-table student-detail-courses-table">
               <thead>
                 <tr>
+                  <th className="col-serial">S/N</th>
                   <th>Course</th>
                   <th>Classification</th>
                   <th>Score</th>
@@ -222,11 +217,12 @@ export default function StudentDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {courseRows.map((row) => {
+                {courseRows.map((row, index) => {
                   const expanded = expandedCourseId === row.course.id;
                   return (
                     <Fragment key={row.course.id}>
                       <tr>
+                        <td className="col-serial">{index + 1}</td>
                         <td>
                           <span className="student-detail-course-code">{row.course.code}</span>
                           <span className="muted student-detail-course-name">{row.course.name}</span>
@@ -253,7 +249,7 @@ export default function StudentDetailPage() {
                       </tr>
                       {expanded ? (
                         <tr className="student-detail-evidence-row">
-                          <td colSpan={5}>
+                          <td colSpan={6}>
                             <div className="student-detail-evidence-panel">
                               <h3 className="student-detail-evidence-title">Evidence — {row.course.code}</h3>
                               <dl className="student-evidence-dl">

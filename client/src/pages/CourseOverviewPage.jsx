@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import ClassificationRunChanges from "../components/courses/ClassificationRunChanges.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import StudentsNeedingAttention from "../components/courses/StudentsNeedingAttention.jsx";
 import ClassificationTrendChart from "../components/dashboard/ClassificationTrendChart.jsx";
+import ClassificationTrendFilter from "../components/dashboard/ClassificationTrendFilter.jsx";
 import DistributionChart from "../components/dashboard/DistributionChart.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
@@ -14,6 +16,7 @@ import {
   readCoursePeriod,
 } from "../lib/coursePeriod.js";
 import { formatCountDelta, runPeriodLabel, ymd } from "../lib/classificationRuns.js";
+import { ALL_CLASSIFICATIONS } from "../lib/classificationTrend.js";
 import { apiRequest } from "../services/api.js";
 
 const ATTENTION_LIMIT = 5;
@@ -73,10 +76,12 @@ export default function CourseOverviewPage() {
   const appliedPeriod = readCoursePeriod(searchParams);
   const [course, setCourse] = useState(null);
   const [allRuns, setAllRuns] = useState([]);
+  const [classificationFilter, setClassificationFilter] = useState(ALL_CLASSIFICATIONS);
   const [enrolledCount, setEnrolledCount] = useState(null);
   const [attentionItems, setAttentionItems] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const isActiveRef = useRef(true);
 
   const latestRun = allRuns[0] || null;
   const previousRun = allRuns[1] || null;
@@ -96,6 +101,9 @@ export default function CourseOverviewPage() {
         apiRequest(`/api/v1/courses/${courseId}`),
         apiRequest(`/api/v1/courses/${courseId}/classification-runs?scope=all`),
       ]);
+      if (!isActiveRef.current) {
+        return;
+      }
       setCourse(courseResult.data.course);
       const items = runsResult.data.items || [];
       setAllRuns(items);
@@ -123,6 +131,9 @@ export default function CourseOverviewPage() {
         apiRequest(`/api/v1/courses/${courseId}/dashboard?${dashParams.toString()}`),
         fetchAttentionStudents(courseId, latest.runId, period.periodStart, period.periodEnd),
       ]);
+      if (!isActiveRef.current) {
+        return;
+      }
       setEnrolledCount(dash.data.enrolledCount ?? null);
       setAttentionItems(attention);
 
@@ -132,17 +143,26 @@ export default function CourseOverviewPage() {
       nextParams.set("runId", latest.runId);
       setSearchParams(nextParams, { replace: true });
     } catch (err) {
+      if (!isActiveRef.current) {
+        return;
+      }
       setError(err.message);
       setAllRuns([]);
       setAttentionItems([]);
       setEnrolledCount(null);
     } finally {
-      setLoading(false);
+      if (isActiveRef.current) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
+    isActiveRef.current = true;
     load();
+    return () => {
+      isActiveRef.current = false;
+    };
   }, [courseId]);
 
   const hasRuns = allRuns.length > 0;
@@ -180,6 +200,8 @@ export default function CourseOverviewPage() {
 
       <CourseTabs courseId={courseId} />
 
+      <LoadingState loading={loading} variant="section" message="Preparing engagement analytics…" />
+
       {!loading && !error && !hasRuns ? (
         <section className="card course-overview-section course-overview-empty-runs">
           <h2>No classifications yet</h2>
@@ -193,7 +215,7 @@ export default function CourseOverviewPage() {
         </section>
       ) : null}
 
-      {hasRuns || loading ? (
+      {!loading && hasRuns ? (
         <>
           <section className="status-grid course-overview-kpis" aria-label="Classification summary">
             <SummaryCard
@@ -248,21 +270,27 @@ export default function CourseOverviewPage() {
           <section className="card course-overview-section">
             <h2>Classification distribution</h2>
             <p className="panel-desc">Latest classification run.</p>
-            {loading || !latestCounts ? (
-              <p className="course-overview-table-loading">Loading…</p>
+            {!latestCounts ? (
+              <LoadingState loading variant="inline" message="Preparing classification summary…" />
             ) : (
               <DistributionChart counts={latestCounts} showHeading />
             )}
           </section>
 
           <section className="card course-overview-section">
-            <h2>Classification trend</h2>
-            <p className="panel-desc">Historical counts from each saved classification run for this course.</p>
+            <div className="classification-trend-card-head">
+              <div>
+                <h2>Classification trend</h2>
+                <p className="panel-desc">Historical counts from each saved classification run for this course.</p>
+              </div>
+              <ClassificationTrendFilter value={classificationFilter} onChange={setClassificationFilter} />
+            </div>
             <ClassificationTrendChart
               runs={allRuns}
               loading={loading}
               latestRunId={latestRun?.runId}
               courseCode={course?.code}
+              classificationFilter={classificationFilter}
             />
           </section>
 

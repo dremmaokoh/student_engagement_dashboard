@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
@@ -102,7 +103,7 @@ export default function CourseImportsPage() {
   if (loading) {
     return (
       <main className="content">
-        <p className="lede">Loading imports…</p>
+        <LoadingState loading variant="page" size="lg" message="Loading import history…" />
       </main>
     );
   }
@@ -169,7 +170,7 @@ export default function CourseImportsPage() {
             </p>
           ) : null}
           <button type="submit" className="primary-btn" disabled={working || !file}>
-            {working ? "Working…" : "Preview import"}
+            {working ? "Checking file…" : "Preview import"}
           </button>
         </form>
       </section>
@@ -187,14 +188,16 @@ export default function CourseImportsPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="col-serial">S/N</th>
                   <th>Row</th>
                   <th>Field</th>
                   <th>Reason</th>
                 </tr>
               </thead>
               <tbody>
-                {preview.errors.map((item) => (
+                {preview.errors.map((item, index) => (
                   <tr key={`${item.rowNumber}-${item.field}`}>
+                    <td className="col-serial">{index + 1}</td>
                     <td>{item.rowNumber}</td>
                     <td>{item.field}</td>
                     <td>{item.reason}</td>
@@ -205,7 +208,7 @@ export default function CourseImportsPage() {
           ) : null}
           {preview.status === "previewed" ? (
             <button type="button" className="primary-btn" onClick={confirmPreview} disabled={working}>
-              Confirm import
+              {working ? "Importing…" : "Confirm import"}
             </button>
           ) : (
             <p className="badge badge-session-ok">Import confirmed</p>
@@ -220,6 +223,7 @@ export default function CourseImportsPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>File</th>
                 <th>Status</th>
                 <th>Valid</th>
@@ -229,8 +233,9 @@ export default function CourseImportsPage() {
               </tr>
             </thead>
             <tbody>
-              {history.map((item) => (
+              {history.map((item, index) => (
                 <tr key={item.id}>
+                  <td className="col-serial">{index + 1}</td>
                   <td>{item.filename}</td>
                   <td>{item.status}</td>
                   <td>{item.validCount}</td>

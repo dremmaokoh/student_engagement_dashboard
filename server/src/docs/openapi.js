@@ -257,6 +257,33 @@ export const openApiSpec = {
         responses: { 200: { description: "Enrolments" } },
       },
     },
+    "/courses/{courseId}/students/template": {
+      get: {
+        tags: ["Students"],
+        security: [{ bearerAuth: [] }],
+        summary: "Download a course student import template",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "text/csv" } },
+      },
+    },
+    "/courses/{courseId}/students/import/preview": {
+      post: {
+        tags: ["Students"],
+        security: [{ bearerAuth: [] }],
+        summary: "Preview a course student CSV import",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 201: { description: "Preview with row-level duplicate and conflict errors" } },
+      },
+    },
+    "/courses/{courseId}/students/import/confirm": {
+      post: {
+        tags: ["Students"],
+        security: [{ bearerAuth: [] }],
+        summary: "Confirm a course student CSV import",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Students created and enrolled" }, 409: { description: "ID or email conflict" } },
+      },
+    },
     "/courses/{courseId}/enrollments": {
       post: {
         tags: ["Students"],
@@ -264,6 +291,15 @@ export const openApiSpec = {
         summary: "Enrol a student",
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: { 201: { description: "Enrolled" }, 409: { description: "Duplicate active enrolment" } },
+      },
+    },
+    "/courses/{courseId}/enrollments/bulk": {
+      post: {
+        tags: ["Students"],
+        security: [{ bearerAuth: [] }],
+        summary: "Enrol multiple existing students in a course",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 201: { description: "Bulk enrolment counts" } },
       },
     },
     "/enrollments/{enrollmentId}": {

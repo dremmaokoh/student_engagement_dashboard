@@ -33,10 +33,24 @@ function NavGlyph({ name }) {
   );
 }
 
+function initialsFrom(name) {
+  return (
+    String(name || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "U"
+  );
+}
+
 export default function AppShell() {
   const { user, logout } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const userInitials = initialsFrom(user?.fullName);
 
   function closeNav() {
     setNavOpen(false);
@@ -94,8 +108,13 @@ export default function AppShell() {
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-identity">
-            <p className="sidebar-user">{user?.fullName}</p>
-            <p className="sidebar-email">{user?.email}</p>
+            <span className="sidebar-user-avatar" aria-hidden="true">
+              {userInitials}
+            </span>
+            <div className="sidebar-user-copy">
+              <p className="sidebar-user">{user?.fullName}</p>
+              <p className="sidebar-email">{user?.email}</p>
+            </div>
           </div>
           <button
             type="button"

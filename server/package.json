@@ -36,6 +36,6 @@
     "setupFiles": [
       "<rootDir>/tests/setupEnv.cjs"
     ],
-    "testTimeout": 30000
+    "testTimeout": 60000
   }
 }

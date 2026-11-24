@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import ConfigurationReadOnlyPanel from "../components/settings/ConfigurationReadOnlyPanel.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
@@ -40,9 +41,7 @@ export default function CourseConfigurationViewPage() {
   if (loading) {
     return (
       <main className="content">
-        <p className="lede" role="status">
-          Loading configuration…
-        </p>
+        <LoadingState loading variant="page" size="lg" message="Fetching course configuration…" />
       </main>
     );
   }

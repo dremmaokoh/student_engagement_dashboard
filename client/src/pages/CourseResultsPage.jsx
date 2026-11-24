@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
 import { formatRunTitle } from "../lib/classificationRuns.js";
 import { courseOverviewPath, readCoursePeriod } from "../lib/coursePeriod.js";
+import { serialNumber } from "../lib/serialNumber.js";
 import { apiRequest, downloadAuthenticated } from "../services/api.js";
+
+const RESULTS_PAGE_SIZE = 50;
 
 function ymd(value) {
   if (!value) {
@@ -43,11 +47,15 @@ export default function CourseResultsPage() {
   const [runs, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState("");
   const [results, setResults] = useState(null);
+  const [resultsPage, setResultsPage] = useState(1);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const isActiveRef = useRef(true);
+  const resultsRequestRef = useRef(0);
 
   function syncUrlToSelection(period, runId) {
-    if (!runId || !period?.periodStart || !period?.periodEnd) {
+    if (!isActiveRef.current || !runId || !period?.periodStart || !period?.periodEnd) {
       return;
     }
     const currentRun = searchParams.get("runId");
@@ -67,22 +75,35 @@ export default function CourseResultsPage() {
     setSearchParams(nextParams, { replace: true });
   }
 
-  async function loadRunResults(runId, runRow) {
+  async function loadRunResults(runId, runRow, page = 1) {
     const dashPeriod = runPeriod(runRow);
     if (!dashPeriod) {
       setResults(null);
       return;
     }
+    const requestId = ++resultsRequestRef.current;
+    setResultsLoading(true);
     const dashParams = new URLSearchParams({
       periodStart: dashPeriod.periodStart,
       periodEnd: dashPeriod.periodEnd,
       runId,
-      limit: "50",
+      limit: String(RESULTS_PAGE_SIZE),
+      page: String(page),
     });
-    const dash = await apiRequest(`/api/v1/courses/${courseId}/dashboard?${dashParams.toString()}`);
-    setResults(dash.data);
-    setPeriodStart(dashPeriod.periodStart);
-    setPeriodEnd(dashPeriod.periodEnd);
+    try {
+      const dash = await apiRequest(`/api/v1/courses/${courseId}/dashboard?${dashParams.toString()}`);
+      if (!isActiveRef.current || requestId !== resultsRequestRef.current) {
+        return;
+      }
+      setResults(dash.data);
+      setPeriodStart(dashPeriod.periodStart);
+      setPeriodEnd(dashPeriod.periodEnd);
+      setResultsPage(page);
+    } finally {
+      if (isActiveRef.current && requestId === resultsRequestRef.current) {
+        setResultsLoading(false);
+      }
+    }
   }
 
   async function loadHistory(preferredRunId) {
@@ -90,9 +111,15 @@ export default function CourseResultsPage() {
     setError("");
     try {
       const courseResult = await apiRequest(`/api/v1/courses/${courseId}`);
+      if (!isActiveRef.current) {
+        return;
+      }
       setCourse(courseResult.data.course);
 
       const history = await apiRequest(`/api/v1/courses/${courseId}/classification-runs?scope=all`);
+      if (!isActiveRef.current) {
+        return;
+      }
       const items = history.data.items || [];
       setRuns(items);
 
@@ -105,33 +132,51 @@ export default function CourseResultsPage() {
       const chosenRunRow = items.find((row) => row.runId === chosenRunId);
 
       if (chosenRunId && chosenRunRow) {
-        await loadRunResults(chosenRunId, chosenRunRow);
+        setResultsPage(1);
+        await loadRunResults(chosenRunId, chosenRunRow, 1);
+        if (!isActiveRef.current) {
+          return;
+        }
         syncUrlToSelection(runPeriod(chosenRunRow), chosenRunId);
       } else {
         setResults(null);
+        setResultsPage(1);
         setPeriodStart("");
         setPeriodEnd("");
       }
     } catch (err) {
+      if (!isActiveRef.current) {
+        return;
+      }
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (isActiveRef.current) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
+    isActiveRef.current = true;
     const runFromUrl = searchParams.get("runId") || undefined;
     loadHistory(runFromUrl);
+    return () => {
+      isActiveRef.current = false;
+    };
   }, [courseId, searchParams.get("runId")]);
 
   async function openRun(run) {
     const runId = run.runId;
     setSelectedRun(runId);
+    setResultsPage(1);
     setError("");
     try {
       await loadRunResults(runId, run);
       syncUrlToSelection(runPeriod(run), runId);
     } catch (err) {
+      if (!isActiveRef.current) {
+        return;
+      }
       setError(err.message);
     }
   }
@@ -139,6 +184,20 @@ export default function CourseResultsPage() {
   const exportPeriod = selectedRun ? runPeriod(runs.find((row) => row.runId === selectedRun)) : null;
   const selectedRunRow = runs.find((row) => row.runId === selectedRun);
   const selectedRunTitle = selectedRunRow ? formatRunTitle(course?.code, selectedRunRow.runName) : null;
+  const resultsTotalPages = results?.results?.totalPages || 1;
+  const resultsTotal = results?.results?.total || 0;
+
+  function changeResultsPage(page) {
+    if (!isActiveRef.current || !selectedRun || !selectedRunRow || page < 1 || page > resultsTotalPages) {
+      return;
+    }
+    setError("");
+    loadRunResults(selectedRun, selectedRunRow, page).catch((err) => {
+      if (isActiveRef.current) {
+        setError(err.message);
+      }
+    });
+  }
 
   return (
     <main className="content">
@@ -213,7 +272,13 @@ export default function CourseResultsPage() {
       <section className="card table-card">
         <h2>Run history</h2>
         <p className="panel-desc">All classification runs for this course, newest first.</p>
-        {loading ? <p className="lede">Loading history…</p> : null}
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          rows={4}
+          columns={6}
+          label="Retrieving assessment history…"
+        />
         {!loading && !error && runs.length === 0 ? (
           <p className="lede">No classification runs yet. Generate classifications from Monitoring.</p>
         ) : null}
@@ -221,6 +286,7 @@ export default function CourseResultsPage() {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Run name</th>
                 <th>Generated</th>
                 <th>Monitoring period</th>
@@ -234,8 +300,9 @@ export default function CourseResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
+              {runs.map((run, index) => (
                 <tr key={run.runId} className={run.runId === selectedRun ? "row-selected" : undefined}>
+                  <td className="col-serial">{index + 1}</td>
                   <td className="course-results-run-name-cell">
                     <strong>{formatRunTitle(course?.code, run.runName)}</strong>
                   </td>
@@ -263,7 +330,7 @@ export default function CourseResultsPage() {
         ) : null}
       </section>
 
-      {selectedRun && !loading && !error && !results?.results?.items?.length ? (
+      {selectedRun && !loading && !resultsLoading && !error && !results?.results?.items?.length ? (
         <section className="card">
           <p className="lede">
             No student results were returned for this run. Try opening the run again or reload the page.
@@ -271,7 +338,7 @@ export default function CourseResultsPage() {
         </section>
       ) : null}
 
-      {results?.results?.items?.length ? (
+      {resultsLoading || results?.results?.items?.length ? (
         <section className="card table-card">
           <h2>Students in this run</h2>
           <p className="lede">
@@ -280,35 +347,74 @@ export default function CourseResultsPage() {
                 <strong>{selectedRunTitle}</strong>.{" "}
               </>
             ) : null}
-            Monitoring period {periodStart} to {periodEnd}. Configuration v{results.configurationVersion}. Counts stay
-            on the snapshot used when the run was generated.
+            Monitoring period {periodStart} to {periodEnd}.
+            {results ? ` Configuration v${results.configurationVersion}.` : ""} Counts stay on the snapshot used when the
+            run was generated.
           </p>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Student</th>
-                <th>Score</th>
-                <th>Classification</th>
-                <th>Evidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.results.items.map((item) => (
-                <tr key={item.id} className={`row-status-${item.classification}`}>
-                  <td>
-                    {item.student?.fullName} ({item.student?.matriculationNumber})
-                  </td>
-                  <td>{item.displayScore == null ? "Not calculated" : `${item.displayScore}/100`}</td>
-                  <td>
-                    <ClassificationBadge classification={item.classification} />
-                  </td>
-                  <td>
-                    <Link to={`/courses/${courseId}/results/${item.id}`}>View evidence</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ContentSkeleton
+            loading={resultsLoading}
+            variant="table"
+            rows={5}
+            columns={5}
+            label="Loading results…"
+          />
+          {!resultsLoading && results?.results?.items?.length ? (
+            <>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="col-serial">S/N</th>
+                    <th>Student</th>
+                    <th>Score</th>
+                    <th>Classification</th>
+                    <th>Evidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.results.items.map((item, index) => (
+                    <tr key={item.id} className={`row-status-${item.classification}`}>
+                      <td className="col-serial">
+                        {serialNumber(index, { page: results.results.page, limit: results.results.limit })}
+                      </td>
+                      <td>
+                        {item.student?.fullName} ({item.student?.matriculationNumber})
+                      </td>
+                      <td>{item.displayScore == null ? "Not calculated" : `${item.displayScore}/100`}</td>
+                      <td>
+                        <ClassificationBadge classification={item.classification} />
+                      </td>
+                      <td>
+                        <Link to={`/courses/${courseId}/results/${item.id}`}>View evidence</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {resultsTotalPages > 1 ? (
+                <div className="table-pager">
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    disabled={resultsPage <= 1}
+                    onClick={() => changeResultsPage(resultsPage - 1)}
+                  >
+                    Previous
+                  </button>
+                  <span className="muted">
+                    Page {resultsPage} of {resultsTotalPages} · {resultsTotal} students
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    disabled={resultsPage >= resultsTotalPages}
+                    onClick={() => changeResultsPage(resultsPage + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </section>
       ) : null}
     </main>

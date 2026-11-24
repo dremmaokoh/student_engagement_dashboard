@@ -2,6 +2,7 @@ import { archiveCourse, createCourse, listCourses, updateCourse } from "../servi
 import {
   createStudent,
   enrolStudent,
+  enrolStudents,
   getStudentParticipationProfile,
   listCourseStudents,
   listStudents,
@@ -68,6 +69,11 @@ export async function getCourseStudents(req, res) {
 export async function postEnrollment(req, res) {
   const enrollment = await enrolStudent(req.course._id, req.body?.studentId);
   res.status(201).json({ data: { enrollment } });
+}
+
+export async function postBulkEnrollment(req, res) {
+  const data = await enrolStudents(req.course._id, req.body?.studentIds);
+  res.status(201).json({ data });
 }
 
 export async function patchEnrollment(req, res) {

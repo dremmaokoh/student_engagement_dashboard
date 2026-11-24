@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import AddStudentModal from "../components/students/AddStudentModal.jsx";
 import StudentCourseBadges from "../components/students/StudentCourseBadges.jsx";
 import StudentAvatar from "../components/students/StudentAvatar.jsx";
 import StudentParticipationCell from "../components/students/StudentParticipationCell.jsx";
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
+import { serialNumber } from "../lib/serialNumber.js";
 import { apiRequest } from "../services/api.js";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
@@ -281,14 +283,13 @@ export default function StudentsPage() {
           </div>
         ) : null}
 
-        {loading ? (
-          <div className="students-skeleton" role="status" aria-live="polite">
-            <span className="visually-hidden">Loading students…</span>
-            {Array.from({ length: 6 }, (_, index) => (
-              <div key={index} className="skeleton-row" />
-            ))}
-          </div>
-        ) : null}
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          rows={6}
+          columns={7}
+          label="Loading student records…"
+        />
 
         {emptyMessage === "no-courses" ? (
           <div className="students-empty students-empty-compact">
@@ -334,6 +335,7 @@ export default function StudentsPage() {
               <table className="data-table students-directory-table">
                 <thead>
                   <tr>
+                    <th className="col-serial">S/N</th>
                     <th>Student</th>
                     <th>Student ID</th>
                     <th>Courses</th>
@@ -342,10 +344,13 @@ export default function StudentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {directory.items.map((student) => {
+                  {directory.items.map((student, index) => {
                     const detailPath = studentDetailPath(student.id);
                     return (
                       <tr key={student.id}>
+                        <td className="col-serial">
+                          {serialNumber(index, { page: directory.page, limit: directory.limit })}
+                        </td>
                         <td className="students-col-name">
                           <div className="student-name-row">
                             <StudentAvatar fullName={student.fullName} size="sm" />

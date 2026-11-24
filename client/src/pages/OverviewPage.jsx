@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import DesignLegend from "../components/design/DesignLegend.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
 import { apiRequest } from "../services/api.js";
 
 export default function OverviewPage() {
   const { user } = useAuth();
-  const [health, setHealth] = useState({ status: "loading", db: "unknown" });
+  const [health, setHealth] = useState({ status: "unknown", db: "unknown" });
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,11 +21,13 @@ export default function OverviewPage() {
         }
         setHealth({ status: status.status, db: status.db });
         setCourses(courseResult.data.items);
+        setLoading(false);
       })
       .catch((err) => {
         if (!cancelled) {
           setError(err.message);
           setHealth({ status: "unreachable", db: "unknown" });
+          setLoading(false);
         }
       });
     return () => {
@@ -48,22 +52,32 @@ export default function OverviewPage() {
             {error}
           </p>
         ) : null}
-        {courses.length === 0 ? (
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          rows={3}
+          columns={4}
+          label="Fetching course information…"
+        />
+        {!loading && courses.length === 0 ? (
           <p className="lede">
             No courses yet. <Link to="/courses">Create a course</Link>.
           </p>
-        ) : (
+        ) : null}
+        {!loading && courses.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Code</th>
                 <th>Name</th>
                 <th>Open</th>
               </tr>
             </thead>
             <tbody>
-              {courses.map((course) => (
+              {courses.map((course, index) => (
                 <tr key={course.id}>
+                  <td className="col-serial">{index + 1}</td>
                   <td>{course.code}</td>
                   <td>{course.name}</td>
                   <td>
@@ -73,7 +87,7 @@ export default function OverviewPage() {
               ))}
             </tbody>
           </table>
-        )}
+        ) : null}
       </section>
 
       <DesignLegend />
@@ -87,12 +101,16 @@ export default function OverviewPage() {
           <dd>{user?.role}</dd>
           <dt>API status</dt>
           <dd>
-            <span className={health.status === "ok" ? "badge badge-session-ok" : "badge badge-session-degraded"}>
-              {health.status}
-            </span>
+            {loading ? (
+              <span className="badge">—</span>
+            ) : (
+              <span className={health.status === "ok" ? "badge badge-session-ok" : "badge badge-session-degraded"}>
+                {health.status}
+              </span>
+            )}
           </dd>
           <dt>Database</dt>
-          <dd>{health.db}</dd>
+          <dd>{loading ? "—" : health.db}</dd>
         </dl>
       </section>
     </main>

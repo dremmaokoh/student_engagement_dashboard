@@ -95,7 +95,11 @@ export default function CourseActivityImportModal({
   }
 
   return (
-    <dialog ref={dialogRef} className="student-modal course-workspace-modal" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="student-modal course-workspace-modal course-activity-import-modal"
+      onClose={onClose}
+    >
       <div className="student-modal-form course-workspace-modal-body">
         <header className="student-modal-header">
           <h2>Import activity</h2>
@@ -145,14 +149,16 @@ export default function CourseActivityImportModal({
                 <table className="data-table">
                   <thead>
                     <tr>
+                      <th className="col-serial">S/N</th>
                       <th>Row</th>
                       <th>Field</th>
                       <th>Reason</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.errors.slice(0, 20).map((item) => (
+                    {preview.errors.slice(0, 20).map((item, index) => (
                       <tr key={`${item.rowNumber}-${item.field}`}>
+                        <td className="col-serial">{index + 1}</td>
                         <td>{item.rowNumber}</td>
                         <td>{item.field}</td>
                         <td>{item.reason}</td>

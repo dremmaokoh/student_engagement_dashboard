@@ -51,6 +51,7 @@ export default function CourseComparison({
         <table className="data-table course-compare-table">
           <thead>
             <tr>
+              <th className="col-serial">S/N</th>
               <th>Course</th>
               <th>Enrolments</th>
               <th>Active</th>
@@ -62,12 +63,13 @@ export default function CourseComparison({
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => {
+            {items.map((item, index) => {
               const total = item.hasClassification ? item.counts?.total || 0 : 0;
               const barId = `course-dist-${item.course.id}`;
 
               return (
                 <tr key={item.course.id}>
+                  <td className="col-serial">{index + 1}</td>
                   <td>
                     <span className="course-code">{item.course.code}</span>
                     <div className="course-name">{item.course.name}</div>

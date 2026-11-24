@@ -351,6 +351,60 @@ export async function enrolStudent(courseId, studentId) {
   return toPublicEnrollment(enrollment, student);
 }
 
+export async function enrolStudents(courseId, studentIdsInput) {
+  const studentIds = [...new Set((Array.isArray(studentIdsInput) ? studentIdsInput : []).filter(Boolean).map(String))];
+  if (!studentIds.length) {
+    throw new HttpError(400, "Select at least one student.");
+  }
+  if (studentIds.some((studentId) => !mongoose.isValidObjectId(studentId))) {
+    throw new HttpError(400, "A valid studentId is required.");
+  }
+
+  const students = await Student.find({ _id: { $in: studentIds } }).select("_id").lean();
+  const studentsById = new Set(students.map((student) => String(student._id)));
+  const missingCount = studentIds.filter((studentId) => !studentsById.has(studentId)).length;
+  if (missingCount) {
+    throw new HttpError(404, `${missingCount} selected student${missingCount === 1 ? "" : "s"} could not be found.`);
+  }
+
+  const existing = await Enrollment.find({ courseId, studentId: { $in: studentIds } })
+    .select("studentId status")
+    .lean();
+  const existingByStudent = new Map(existing.map((row) => [String(row.studentId), row]));
+  const operations = [];
+  let reactivated = 0;
+
+  for (const studentId of studentIds) {
+    const current = existingByStudent.get(studentId);
+    if (!current) {
+      operations.push({
+        insertOne: {
+          document: {
+            studentId,
+            courseId: String(courseId),
+            status: "active",
+            enrolledAt: new Date(),
+          },
+        },
+      });
+    } else if (current.status !== "active") {
+      operations.push({
+        updateOne: {
+          filter: { _id: current._id },
+          update: { $set: { status: "active", enrolledAt: new Date() } },
+        },
+      });
+      reactivated += 1;
+    }
+  }
+
+  const created = operations.length ? (await Enrollment.bulkWrite(operations, { ordered: false })).insertedCount : 0;
+  return {
+    enrolled: created + reactivated,
+    alreadyEnrolled: studentIds.length - created - reactivated,
+  };
+}
+
 export async function updateEnrollment(enrollmentId, lecturerId, { status }) {
   if (!["active", "withdrawn"].includes(status)) {
     throw new HttpError(400, "Enrollment status must be active or withdrawn.");

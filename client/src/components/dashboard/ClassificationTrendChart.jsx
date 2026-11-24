@@ -1,27 +1,23 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
+import LoadingState from "../common/LoadingState.jsx";
 import { formatRunTitle, runPeriodLabel } from "../../lib/classificationRuns.js";
-import { classificationLabel } from "../../lib/classifications.js";
+import {
+  ALL_CLASSIFICATIONS,
+  CHART_HEIGHT,
+  CHART_WIDTH,
+  CLASSIFICATION_TREND_SERIES,
+  classificationCountLabel,
+  plotIndexFromPointer,
+  pointerSvgX,
+  POINT_RADIUS,
+  POINT_RADIUS_HOVER,
+  POINT_RADIUS_LATEST,
+  POINT_RADIUS_LATEST_HOVER,
+  trendTooltipPlacement,
+  visibleTrendSeries,
+} from "../../lib/classificationTrend.js";
 
-const SERIES = [
-  { key: "ACTIVE", color: "var(--color-classification-active)", className: "trend-active" },
-  { key: "REQUIRING_ATTENTION", color: "var(--color-classification-attention)", className: "trend-attention" },
-  { key: "INACTIVE", color: "var(--color-classification-inactive)", className: "trend-inactive" },
-  { key: "INSUFFICIENT_DATA", color: "var(--color-classification-insufficient)", className: "trend-insufficient" },
-];
-
-const CHART_WIDTH = 720;
-const CHART_HEIGHT = 260;
 const PAD = { top: 24, right: 20, bottom: 44, left: 48 };
-const POINT_RADIUS = 4.5;
-const POINT_RADIUS_LATEST = 5;
-
-function plotIndexFromPointer(relativeX, innerW, runCount) {
-  if (runCount <= 1) {
-    return 0;
-  }
-  const ratio = Math.min(Math.max(relativeX / innerW, 0), 1);
-  return Math.round(ratio * (runCount - 1));
-}
 
 function formatRunDate(value) {
   if (!value) {
@@ -50,21 +46,30 @@ function buildRunTooltipText(run, courseCode) {
     formatRunTitle(courseCode, run?.runName),
     `Generated ${formatRunDate(run.generatedAt)}`,
     period ? `Monitoring period ${period}` : "Monitoring period —",
-    `Active student count: ${countForRun(run, "ACTIVE")}`,
-    `Requiring Attention count: ${countForRun(run, "REQUIRING_ATTENTION")}`,
-    `Inactive student count: ${countForRun(run, "INACTIVE")}`,
-    `Insufficient Data count: ${countForRun(run, "INSUFFICIENT_DATA")}`,
+    ...CLASSIFICATION_TREND_SERIES.map((series) => `${classificationCountLabel(series)}: ${countForRun(run, series.key)}`),
   ].join("\n");
 }
 
-function RunCountSnapshot({ run, courseCode = "", interactive = false, isLatest = false }) {
+function RunCountSnapshot({
+  run,
+  courseCode = "",
+  interactive = false,
+  isLatest = false,
+  runNumber = null,
+  selectedKey = null,
+  showPeriod = true,
+  compact = false,
+}) {
   const period = runPeriodLabel(run);
   const runTitle = formatRunTitle(courseCode, run?.runName);
   return (
     <div
-      className={`classification-trend-run-tooltip classification-trend-snapshot ${interactive ? "is-interactive" : ""} ${isLatest ? "is-latest-run" : ""}`}
+      className={`classification-trend-run-tooltip classification-trend-snapshot ${compact ? "is-compact" : ""} ${interactive ? "is-interactive" : ""} ${isLatest ? "is-latest-run" : ""}`}
       role={interactive ? "status" : undefined}
     >
+      {runNumber !== null ? (
+        <span className="classification-trend-run-tooltip-sequence">{runSequenceLabel(runNumber - 1)}</span>
+      ) : null}
       <p className="classification-trend-run-tooltip-title">
         {runTitle}
         {isLatest ? <span className="classification-trend-latest-badge"> Latest run</span> : null}
@@ -72,23 +77,20 @@ function RunCountSnapshot({ run, courseCode = "", interactive = false, isLatest 
       <p className="classification-trend-run-tooltip-date">
         <span className="classification-trend-tooltip-k">Generated</span> {formatRunDate(run.generatedAt)}
       </p>
-      {period ? (
+      {showPeriod && period ? (
         <p className="classification-trend-run-tooltip-period">
           <span className="classification-trend-tooltip-k">Monitoring period</span> {period}
         </p>
       ) : null}
       <dl className="classification-trend-run-tooltip-stats">
-        {SERIES.map((series) => (
-          <div key={series.key} className="classification-trend-run-tooltip-stat">
+        {CLASSIFICATION_TREND_SERIES.map((series) => (
+          <div
+            key={series.key}
+            className={`classification-trend-run-tooltip-stat ${selectedKey === series.key ? "is-selected" : ""}`}
+          >
             <dt>
               <span className="classification-trend-legend-line" style={{ background: series.color }} aria-hidden="true" />
-              {series.key === "ACTIVE"
-                ? "Active student count"
-                : series.key === "REQUIRING_ATTENTION"
-                  ? "Requiring Attention count"
-                  : series.key === "INACTIVE"
-                    ? "Inactive student count"
-                    : "Insufficient Data count"}
+              {classificationCountLabel(series)}
             </dt>
             <dd>{countForRun(run, series.key)}</dd>
           </div>
@@ -98,8 +100,15 @@ function RunCountSnapshot({ run, courseCode = "", interactive = false, isLatest 
   );
 }
 
-export default function ClassificationTrendChart({ runs = [], loading = false, latestRunId = "", courseCode = "" }) {
+export default function ClassificationTrendChart({
+  runs = [],
+  loading = false,
+  latestRunId = "",
+  courseCode = "",
+  classificationFilter = ALL_CLASSIFICATIONS,
+}) {
   const [hoverIndex, setHoverIndex] = useState(null);
+  const tooltipId = useId();
 
   const chronological = useMemo(
     () => [...runs].sort((a, b) => new Date(a.generatedAt) - new Date(b.generatedAt)),
@@ -113,6 +122,10 @@ export default function ClassificationTrendChart({ runs = [], loading = false, l
     return chronological.findIndex((run) => String(run.runId) === String(latestRunId));
   }, [chronological, latestRunId]);
 
+  // Filtering only changes which series are drawn. All counts are still read
+  // from the same run objects, and the y-axis stays comparable across filters.
+  const visibleSeries = useMemo(() => visibleTrendSeries(classificationFilter), [classificationFilter]);
+
   const geometry = useMemo(() => {
     if (chronological.length < 2) {
       return null;
@@ -121,34 +134,39 @@ export default function ClassificationTrendChart({ runs = [], loading = false, l
     const innerH = CHART_HEIGHT - PAD.top - PAD.bottom;
     let yMax = 0;
     for (const run of chronological) {
-      for (const series of SERIES) {
+      for (const series of CLASSIFICATION_TREND_SERIES) {
         yMax = Math.max(yMax, Number(run.counts?.[series.key]) || 0);
       }
     }
     yMax = Math.max(yMax, 1);
     const xStep = innerW / (chronological.length - 1);
 
-    const pointsBySeries = SERIES.map((series) => {
+    const pointsBySeries = visibleSeries.map((series) => {
       const points = chronological.map((run, index) => {
         const value = Number(run.counts?.[series.key]) || 0;
         const x = PAD.left + xStep * index;
         const y = PAD.top + innerH - (value / yMax) * innerH;
-        return { x, y, value, date: run.generatedAt, runId: run.runId, index };
+        return { x, y, value, runId: run.runId, index };
       });
       return { series, points };
     });
 
     const yTicks = [0, Math.ceil(yMax / 2), yMax];
     return { pointsBySeries, yTicks, yMax, innerH, innerW, xStep };
-  }, [chronological]);
+  }, [chronological, visibleSeries]);
 
   const resolvedLatestIndex =
     latestIndex >= 0 ? latestIndex : chronological.length > 0 ? chronological.length - 1 : -1;
-  const displayIndex = hoverIndex !== null ? hoverIndex : resolvedLatestIndex;
-  const displayRun = displayIndex >= 0 ? chronological[displayIndex] : null;
+  const activeIndex = hoverIndex !== null && hoverIndex >= 0 && hoverIndex < chronological.length ? hoverIndex : null;
+  const activeRun = activeIndex !== null ? chronological[activeIndex] : null;
+  const activeX = activeIndex !== null && geometry ? PAD.left + geometry.xStep * activeIndex : null;
+  const tooltipPlacement = activeX !== null ? trendTooltipPlacement(activeX / CHART_WIDTH) : "center";
+  const selectedKey = classificationFilter !== ALL_CLASSIFICATIONS ? classificationFilter : null;
 
   if (loading) {
-    return <p className="classification-trend-empty">Loading classification history…</p>;
+    return (
+      <LoadingState loading variant="inline" message="Preparing classification history…" />
+    );
   }
 
   if (chronological.length === 0) {
@@ -178,132 +196,192 @@ export default function ClassificationTrendChart({ runs = [], loading = false, l
 
   const { pointsBySeries, yTicks, yMax, innerH, innerW, xStep } = geometry;
 
-  function handlePlotPointerMove(event) {
-    const nextIndex = plotIndexFromPointer(event.nativeEvent.offsetX, innerW, chronological.length);
-    setHoverIndex((prev) => (prev === nextIndex ? prev : nextIndex));
+  function handlePointerMove(event) {
+    const svgX = pointerSvgX(event);
+    if (svgX === null) {
+      return;
+    }
+    const nextIndex = plotIndexFromPointer(svgX - PAD.left, innerW, chronological.length);
+    setHoverIndex((previous) => (previous === nextIndex ? previous : nextIndex));
   }
 
-  function handlePlotPointerLeave() {
+  function handlePointerLeave() {
     setHoverIndex(null);
   }
 
-  const highlightBandWidth = Math.max(xStep, 28);
+  function handleChartKeyDown(event) {
+    const current = activeIndex ?? resolvedLatestIndex;
+    let next = null;
+    if (event.key === "ArrowRight") {
+      next = Math.min(chronological.length - 1, current + 1);
+    } else if (event.key === "ArrowLeft") {
+      next = Math.max(0, current - 1);
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = chronological.length - 1;
+    } else if (event.key === "Escape") {
+      setHoverIndex(null);
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    setHoverIndex(next);
+  }
+
+  const keyboardRunIndex = activeIndex ?? resolvedLatestIndex;
+  const keyboardRun = chronological[keyboardRunIndex];
 
   return (
     <figure className="classification-trend-chart">
       <div className="classification-trend-chart-body">
-        <svg
-          className="classification-trend-svg"
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          role="img"
-          aria-label="Classification counts over historical classification runs"
-        >
-          {yTicks.map((tick) => {
-            const y = PAD.top + innerH - (tick / yMax) * innerH;
-            return (
-              <g key={tick}>
-                <line
-                  x1={PAD.left}
-                  x2={CHART_WIDTH - PAD.right}
-                  y1={y}
-                  y2={y}
-                  className="classification-trend-grid"
-                />
-                <text x={PAD.left - 8} y={y + 4} textAnchor="end" className="classification-trend-axis">
-                  {tick}
-                </text>
-              </g>
-            );
-          })}
-          {hoverIndex !== null ? (
-            <rect
-              x={PAD.left + xStep * hoverIndex - highlightBandWidth / 2}
-              y={PAD.top}
-              width={highlightBandWidth}
-              height={innerH}
-              className="classification-trend-hover-band is-active"
-              pointerEvents="none"
-            />
-          ) : null}
-          {chronological.map((run, index) => {
-            const x = PAD.left + geometry.xStep * index;
-            return (
-              <text
-                key={run.runId}
-                x={x}
-                y={CHART_HEIGHT - 12}
-                textAnchor="middle"
-                className={`classification-trend-axis classification-trend-x-label ${index === latestIndex ? "is-latest-run" : ""}`}
-              >
-                {runSequenceLabel(index)}
-                {index === latestIndex ? "*" : ""}
-              </text>
-            );
-          })}
-          {pointsBySeries.map(({ series, points }) => (
-            <g key={series.key} className="classification-trend-series" pointerEvents="none">
-              <polyline
-                fill="none"
-                stroke={series.color}
-                strokeWidth="2.5"
-                strokeLinejoin="round"
-                strokeLinecap="round"
+        <div className="classification-trend-plot-wrap">
+          <svg
+            className="classification-trend-svg"
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            role="group"
+            aria-label="Classification counts over historical classification runs"
+          >
+            {yTicks.map((tick) => {
+              const y = PAD.top + innerH - (tick / yMax) * innerH;
+              return (
+                <g key={tick}>
+                  <line
+                    x1={PAD.left}
+                    x2={CHART_WIDTH - PAD.right}
+                    y1={y}
+                    y2={y}
+                    className="classification-trend-grid"
+                  />
+                  <text x={PAD.left - 8} y={y + 4} textAnchor="end" className="classification-trend-axis">
+                    {tick}
+                  </text>
+                </g>
+              );
+            })}
+            {activeIndex !== null ? (
+              <line
+                x1={activeX}
+                x2={activeX}
+                y1={PAD.top}
+                y2={PAD.top + innerH}
+                className="classification-trend-crosshair"
                 pointerEvents="none"
-                points={points.map((point) => `${point.x},${point.y}`).join(" ")}
               />
-              {points.map((point) => {
-                const pointRun = chronological[point.index];
-                const isEmphasis =
-                  point.index === latestIndex || (hoverIndex !== null && point.index === hoverIndex);
-                return (
-                  <circle
-                    key={`${series.key}-${point.runId}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r={point.index === latestIndex ? POINT_RADIUS_LATEST : POINT_RADIUS}
-                    fill={series.color}
-                    className={`classification-trend-point ${point.index === latestIndex ? "is-latest-run" : ""} ${isEmphasis ? "is-emphasis" : ""}`}
-                    stroke={point.index === latestIndex ? "var(--color-text)" : "none"}
-                    strokeWidth={point.index === latestIndex ? 1.5 : 0}
-                    pointerEvents="none"
-                  >
-                    <title>{buildRunTooltipText(pointRun, courseCode)}</title>
-                  </circle>
-                );
-              })}
-            </g>
-          ))}
-          <rect
-            x={PAD.left}
-            y={PAD.top}
-            width={innerW}
-            height={innerH}
-            className="classification-trend-plot-hit"
-            onMouseMove={handlePlotPointerMove}
-            onMouseLeave={handlePlotPointerLeave}
-          />
-        </svg>
-        <div className="classification-trend-snapshot-slot">
-          {displayRun ? (
-            <RunCountSnapshot
-              run={displayRun}
-              courseCode={courseCode}
-              isLatest={displayIndex === resolvedLatestIndex}
-              interactive={false}
+            ) : null}
+            {chronological.map((run, index) => {
+              const x = PAD.left + xStep * index;
+              return (
+                <text
+                  key={run.runId}
+                  x={x}
+                  y={CHART_HEIGHT - 12}
+                  textAnchor="middle"
+                  className={`classification-trend-axis classification-trend-x-label ${index === resolvedLatestIndex ? "is-latest-run" : ""} ${index === activeIndex ? "is-hovered" : ""}`}
+                >
+                  {runSequenceLabel(index)}
+                  {index === resolvedLatestIndex ? "*" : ""}
+                </text>
+              );
+            })}
+            {pointsBySeries.map(({ series, points }) => (
+              <g
+                key={series.key}
+                className={`classification-trend-series ${activeIndex !== null ? "is-muted" : ""}`}
+                pointerEvents="none"
+              >
+                <polyline
+                  className={`classification-trend-line ${selectedKey === series.key ? "is-selected" : ""}`}
+                  fill="none"
+                  stroke={series.color}
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  pointerEvents="none"
+                  points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+                />
+                {points.map((point) => {
+                  const isHovered = point.index === activeIndex;
+                  const isLatest = point.index === resolvedLatestIndex;
+                  const radius = isHovered
+                    ? isLatest
+                      ? POINT_RADIUS_LATEST_HOVER
+                      : POINT_RADIUS_HOVER
+                    : isLatest
+                      ? POINT_RADIUS_LATEST
+                      : POINT_RADIUS;
+                  return (
+                    <circle
+                      key={`${series.key}-${point.runId}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r={radius}
+                      fill={series.color}
+                      className={`classification-trend-point ${isLatest ? "is-latest-run" : ""} ${isHovered ? "is-hovered" : ""} ${activeIndex !== null && !isHovered ? "is-muted" : ""}`}
+                      stroke={isLatest ? "var(--color-text)" : isHovered ? "var(--color-surface)" : "none"}
+                      strokeWidth={isLatest ? 1.5 : isHovered ? 2 : 0}
+                      pointerEvents="none"
+                    />
+                  );
+                })}
+              </g>
+            ))}
+            <rect
+              x={PAD.left}
+              y={PAD.top}
+              width={innerW}
+              height={innerH}
+              className="classification-trend-plot-hit"
+              tabIndex={0}
+              role="slider"
+              aria-label="Inspect historical classification run"
+              aria-valuemin={1}
+              aria-valuemax={chronological.length}
+              aria-valuenow={keyboardRunIndex + 1}
+              aria-valuetext={keyboardRun ? buildRunTooltipText(keyboardRun, courseCode) : undefined}
+              aria-describedby={activeRun ? tooltipId : undefined}
+              onPointerMove={handlePointerMove}
+              onPointerLeave={handlePointerLeave}
+              onPointerCancel={handlePointerLeave}
+              onFocus={() => setHoverIndex(resolvedLatestIndex)}
+              onBlur={handlePointerLeave}
+              onKeyDown={handleChartKeyDown}
             />
+          </svg>
+          {activeRun ? (
+            <div
+              className={`classification-trend-hover-tooltip is-${tooltipPlacement}`}
+              style={{ left: `${(activeX / CHART_WIDTH) * 100}%` }}
+              id={tooltipId}
+              role="tooltip"
+            >
+              <RunCountSnapshot
+                run={activeRun}
+                courseCode={courseCode}
+                isLatest={activeIndex === resolvedLatestIndex}
+                runNumber={activeIndex + 1}
+                selectedKey={selectedKey}
+                showPeriod={false}
+                compact
+              />
+            </div>
           ) : null}
         </div>
+        <div className="classification-trend-snapshot-slot" role="group" aria-label="Latest classification run summary">
+          <RunCountSnapshot run={chronological[resolvedLatestIndex]} courseCode={courseCode} isLatest />
+        </div>
       </div>
-      {latestIndex >= 0 ? (
+      {resolvedLatestIndex >= 0 ? (
         <p className="classification-trend-latest-legend-note muted">
-          * Latest run ({runSequenceLabel(latestIndex)}), oldest to newest left to right
+          * Latest run ({runSequenceLabel(resolvedLatestIndex)}), oldest to newest left to right
         </p>
       ) : null}
       <ul className="classification-trend-legend">
-        {SERIES.map((series) => (
+        {visibleSeries.map((series) => (
           <li key={series.key} className={`classification-trend-legend-item ${series.className}`}>
             <span className="classification-trend-legend-line" style={{ background: series.color }} aria-hidden="true" />
-            {classificationLabel(series.key)}
+            {series.label}
           </li>
         ))}
       </ul>

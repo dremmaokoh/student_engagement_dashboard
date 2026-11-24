@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import LoadingState from "../components/common/LoadingState.jsx";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import { LAST_RECORDED_LOGIN_LABEL } from "../lib/classifications.js";
 import { toPercentFraction, weightsTotalPercent } from "../lib/weights.js";
@@ -105,6 +106,8 @@ export default function SettingsPage() {
         </p>
       ) : null}
 
+      <LoadingState loading={loading} variant="section" message="Loading settings…" />
+
       <section className="card settings-weights-card" aria-labelledby="weights-heading">
         <h2 id="weights-heading">Activity indicator weights</h2>
         <p className="panel-desc">
@@ -112,8 +115,6 @@ export default function SettingsPage() {
           participation score. Not Applicable indicators are excluded and remaining weights are renormalised during
           calculation (never treated as zero).
         </p>
-
-        {loading ? <p className="lede" role="status">Loading weights…</p> : null}
 
         {!loading ? (
           <form className="settings-weights-form" onSubmit={onSaveWeights}>
@@ -198,6 +199,7 @@ export default function SettingsPage() {
           <table className="data-table settings-example-table">
             <thead>
               <tr>
+                <th className="col-serial">S/N</th>
                 <th>Indicator</th>
                 <th>Score</th>
                 <th>Weight</th>
@@ -206,24 +208,28 @@ export default function SettingsPage() {
             </thead>
             <tbody>
               <tr>
+                <td className="col-serial">1</td>
                 <td>{LAST_RECORDED_LOGIN_LABEL}</td>
                 <td>80</td>
                 <td>30%</td>
                 <td>24</td>
               </tr>
               <tr>
+                <td className="col-serial">2</td>
                 <td>Material access</td>
                 <td>90</td>
                 <td>30%</td>
                 <td>27</td>
               </tr>
               <tr>
+                <td className="col-serial">3</td>
                 <td>Assignment submission</td>
                 <td>75</td>
                 <td>40%</td>
                 <td>30</td>
               </tr>
               <tr>
+                <td className="col-serial" aria-hidden="true" />
                 <th scope="row" colSpan={3}>
                   Total
                 </th>
@@ -254,7 +260,6 @@ export default function SettingsPage() {
           />
         </div>
 
-        {loading ? <p className="lede">Loading courses…</p> : null}
         {!loading && filteredCourses.length === 0 ? (
           <p className="lede">No courses match. Create or import a course from the Courses page first.</p>
         ) : null}
@@ -264,6 +269,7 @@ export default function SettingsPage() {
             <table className="data-table settings-courses-table">
               <thead>
                 <tr>
+                  <th className="col-serial">S/N</th>
                   <th>Course code</th>
                   <th>Course name</th>
                   <th>Configuration status</th>
@@ -271,8 +277,9 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredCourses.map((course) => (
+                {filteredCourses.map((course, index) => (
                   <tr key={course.id}>
+                    <td className="col-serial">{index + 1}</td>
                     <td>{course.code}</td>
                     <td>{course.name}</td>
                     <td>
