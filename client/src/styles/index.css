@@ -2625,8 +2625,13 @@ a.secondary-btn {
   max-height: min(88vh, 820px);
 }
 
-.course-config-modal {
-  max-width: min(720px, 96vw);
+dialog.course-config-modal {
+  width: min(960px, 96vw);
+  max-width: min(960px, 96vw);
+}
+
+dialog.course-config-modal .course-workspace-modal-body {
+  max-height: min(90vh, 880px);
 }
 
 .course-workspace-modal-body {
@@ -6176,7 +6181,7 @@ details.card > summary h2 {
     grid-template-columns: 1fr;
   }
 
-  .table-card,
+  .table-card:not(.students-table-wrap),
   .table-card-flush {
     overflow-x: visible;
   }
@@ -6328,6 +6333,54 @@ details.card > summary h2 {
 .settings-compact-table th,
 .settings-compact-table td {
   padding: var(--spacing-2) var(--spacing-3);
+}
+
+dialog.course-config-modal .student-modal-form {
+  min-width: 0;
+}
+
+dialog.course-config-modal .settings-config-readonly,
+dialog.course-config-modal .settings-config-block,
+dialog.course-config-modal .settings-compact-table {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 360px) {
+  dialog.course-config-modal .student-modal-form {
+    padding-inline: 12px;
+  }
+
+  dialog.course-config-modal .student-modal-header {
+    flex-wrap: wrap;
+  }
+
+  dialog.course-config-modal .settings-compact-table {
+    table-layout: fixed;
+    font-size: 0.78rem;
+  }
+
+  dialog.course-config-modal .settings-compact-table th,
+  dialog.course-config-modal .settings-compact-table td {
+    padding: 8px 4px;
+    overflow-wrap: anywhere;
+  }
+
+  dialog.course-config-modal .settings-compact-table .col-serial {
+    width: 30px;
+    min-width: 30px;
+    padding-inline: 3px;
+  }
+
+  dialog.course-config-modal .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  dialog.course-config-modal .modal-actions .primary-btn,
+  dialog.course-config-modal .modal-actions .secondary-btn {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 .settings-config-section {
