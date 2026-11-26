@@ -51,7 +51,7 @@ export function errorHandler(err, _req, res, _next) {
   if (err.name === "MulterError") {
     return res.status(400).json({
       error: "Upload error",
-      message: err.code === "LIMIT_FILE_SIZE" ? "CSV files must be 2MB or smaller." : err.message,
+      message: err.code === "LIMIT_FILE_SIZE" ? "CSV files must be 5MB or smaller." : err.message,
     });
   }
 

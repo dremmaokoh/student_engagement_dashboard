@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonBar,
+  SkeletonPageHeader,
+  SkeletonPanel,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import CourseActivityImportModal from "../components/courses/CourseActivityImportModal.jsx";
 import CourseConfigurationModal from "../components/courses/CourseConfigurationModal.jsx";
 import CourseEnrolmentModal from "../components/courses/CourseEnrolmentModal.jsx";
@@ -18,6 +23,7 @@ import { courseOverviewPath, courseResultsPath, readCoursePeriod } from "../lib/
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
 import { serialNumber } from "../lib/serialNumber.js";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -32,6 +38,7 @@ const CLASSIFICATION_FILTERS = [
 
 export default function CourseMonitoringPage() {
   const { courseId } = useParams();
+  const run = useApiAction();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -120,6 +127,7 @@ export default function CourseMonitoringPage() {
   async function load(periodOverride = null) {
     setLoading(true);
     setError("");
+    setRoster((current) => ({ ...current, items: [] }));
     const fallbackPeriod = periodOverride || appliedPeriod;
     try {
       const dashParams = new URLSearchParams({
@@ -232,10 +240,22 @@ export default function CourseMonitoringPage() {
     setSuccess("");
     setResultsLinkPeriod(null);
     try {
-      const result = await apiRequest(`/api/v1/courses/${courseId}/classifications/generate`, {
-        method: "POST",
-        body: { runName },
-      });
+      const response = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/classifications/generate`, {
+            method: "POST",
+            body: { runName },
+          }),
+        {
+          loading: "Generating classification…",
+          success: (result) => {
+            const count = result?.data?.generatedCount ?? 0;
+            return `Classification generated for ${course?.code || "course"}: ${count} student${count === 1 ? "" : "s"} classified.`;
+          },
+          rethrow: true,
+        },
+      );
+      const result = response.data;
       const runId = result.data?.runId;
       const savedRunName = result.data?.runName;
       const effectivePeriod = result.data?.period;
@@ -282,7 +302,53 @@ export default function CourseMonitoringPage() {
   if (loading && !course) {
     return (
       <main className="content course-monitoring-page">
-        <LoadingState loading variant="page" size="lg" message="Preparing monitoring workspace…" />
+        <ContentSkeleton loading label="Preparing monitoring workspace…">
+          <SkeletonPageHeader />
+          <section className="card course-monitoring-toolbar-card" aria-hidden="true">
+            <div className="course-monitoring-toolbar">
+              <div className="course-monitoring-toolbar-primary">
+                <SkeletonBar className="skeleton-button" width="180px" />
+                <SkeletonBar className="skeleton-button" width="130px" />
+                <SkeletonBar className="skeleton-button" width="170px" />
+              </div>
+              <div className="course-monitoring-toolbar-secondary">
+                <SkeletonBar className="skeleton-button" width="150px" />
+                <SkeletonBar className="skeleton-button" width="180px" />
+              </div>
+            </div>
+          </section>
+          <SkeletonPanel
+            className="card course-monitoring-import-summary"
+            titleWidth="34%"
+            showTitle
+            lines={["72%", "58%"]}
+          >
+            <dl
+              className="activity-import-used-dl course-monitoring-import-dl course-monitoring-import-dl-compact"
+              aria-hidden="true"
+            >
+              {Array.from({ length: 7 }, (_, index) => (
+                <div key={index}>
+                  <dt>
+                    <SkeletonBar width="70%" height={10} />
+                  </dt>
+                  <dd>
+                    <SkeletonBar width="86%" height={14} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </SkeletonPanel>
+          <SkeletonPanel className="card course-students-roster-card" titleWidth="26%" showTitle>
+            <SkeletonTable
+              columns={skeletonColumns("roster")}
+              rows={6}
+              tableClassName="students-directory-table course-students-roster-table"
+              wrapClassName="table-card students-table-wrap"
+              showFooter
+            />
+          </SkeletonPanel>
+        </ContentSkeleton>
       </main>
     );
   }
@@ -320,26 +386,35 @@ export default function CourseMonitoringPage() {
           classifications.
         </p>
         <div className="course-monitoring-period-notes">
-          <p className="panel-desc course-monitoring-period-note">
-            {latestImport?.monitoringPeriodStart && latestImport?.monitoringPeriodEnd ? (
-              <>
-                Latest imported activity period: {latestImport.monitoringPeriodStart} to{" "}
-                {latestImport.monitoringPeriodEnd}.
-              </>
-            ) : (
-              <>No confirmed activity import yet. Choose a monitoring period when you download an activity template.</>
-            )}
-          </p>
-          {dashboard?.latestClassification ? (
-            <p className="panel-desc course-monitoring-period-note">
-              Latest generated classification period: {dashboard.latestClassification.monitoringPeriodStart || "—"} to{" "}
-              {dashboard.latestClassification.monitoringPeriodEnd || "—"}
-              {dashboard.latestClassification.generatedAt
-                ? ` (generated ${new Date(dashboard.latestClassification.generatedAt).toLocaleString()})`
-                : ""}
-              .
-            </p>
-          ) : null}
+          {loading ? (
+            <>
+              <SkeletonBar width="52%" />
+              <SkeletonBar width="44%" />
+            </>
+          ) : (
+            <>
+              <p className="panel-desc course-monitoring-period-note">
+                {latestImport?.monitoringPeriodStart && latestImport?.monitoringPeriodEnd ? (
+                  <>
+                    Latest imported activity period: {latestImport.monitoringPeriodStart} to{" "}
+                    {latestImport.monitoringPeriodEnd}.
+                  </>
+                ) : (
+                  <>No confirmed activity import yet. Choose a monitoring period when you download an activity template.</>
+                )}
+              </p>
+              {dashboard?.latestClassification ? (
+                <p className="panel-desc course-monitoring-period-note">
+                  Latest generated classification period: {dashboard.latestClassification.monitoringPeriodStart || "—"} to{" "}
+                  {dashboard.latestClassification.monitoringPeriodEnd || "—"}
+                  {dashboard.latestClassification.generatedAt
+                    ? ` (generated ${new Date(dashboard.latestClassification.generatedAt).toLocaleString()})`
+                    : ""}
+                  .
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
       </header>
       <CourseTabs courseId={courseId} />
@@ -391,7 +466,7 @@ export default function CourseMonitoringPage() {
         ) : null}
       </section>
 
-      {!loading ? <LatestImportSummary latestImport={dashboard?.latestImport} loading={false} /> : null}
+      <LatestImportSummary latestImport={dashboard?.latestImport} loading={loading} />
 
       <section className="card course-students-roster-card">
         <div className="course-students-roster-head">
@@ -459,8 +534,11 @@ export default function CourseMonitoringPage() {
         <ContentSkeleton
           loading={loading}
           variant="table"
+          columns={skeletonColumns("roster")}
           rows={6}
-          columns={7}
+          tableClassName="students-directory-table course-students-roster-table"
+          wrapClassName="table-card students-table-wrap"
+          showFooter
           label="Loading roster…"
         />
         {!loading && roster.items.length === 0 ? (
@@ -595,7 +673,12 @@ export default function CourseMonitoringPage() {
             });
           }
           load();
-          setSuccess("Activity import confirmed. Latest import details updated below.");
+          const importedCount = Number(importMeta?.importedCount ?? 0);
+          const skippedCount = Number(importMeta?.skippedCount ?? 0);
+          setSuccess(
+            `Activity import confirmed: ${importedCount} record${importedCount === 1 ? "" : "s"} imported` +
+              `${skippedCount > 0 ? `, ${skippedCount} skipped` : ""}. Latest import details updated below.`,
+          );
         }}
       />
       <CourseConfigurationModal

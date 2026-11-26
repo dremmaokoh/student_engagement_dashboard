@@ -1,4 +1,4 @@
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonBar } from "../common/ContentSkeleton.jsx";
 
 function formatTimestamp(value) {
   if (!value) {
@@ -24,7 +24,20 @@ export default function ActivityImportUsedPanel({ importUsed, hasRun, loading })
       <p className="panel-desc course-overview-provenance-lede">
         This activity dataset was used to generate the classification results currently displayed.
       </p>
-      <LoadingState loading={loading} variant="inline" message="Loading import details…" />
+      <ContentSkeleton loading={loading} label="Loading import details…">
+        <dl className="activity-import-used-dl" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index}>
+              <dt>
+                <SkeletonBar width="68%" height={10} />
+              </dt>
+              <dd>
+                <SkeletonBar width="86%" height={14} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </ContentSkeleton>
       {!loading && !hasRun ? (
         <p className="course-overview-provenance-empty">
           No classification run for this monitoring period. Import activity and generate classifications to see data

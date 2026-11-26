@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import ContentSkeleton, { SkeletonPanel, SkeletonTable } from "../components/common/ContentSkeleton.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
@@ -8,6 +8,8 @@ import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
 import { formatRunTitle } from "../lib/classificationRuns.js";
 import { courseOverviewPath, readCoursePeriod } from "../lib/coursePeriod.js";
 import { serialNumber } from "../lib/serialNumber.js";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest, downloadAuthenticated } from "../services/api.js";
 
 const RESULTS_PAGE_SIZE = 50;
@@ -39,6 +41,7 @@ function runPeriod(run) {
 
 export default function CourseResultsPage() {
   const { courseId } = useParams();
+  const run = useApiAction();
   const [searchParams, setSearchParams] = useSearchParams();
   const appliedPeriod = readCoursePeriod(searchParams);
   const [course, setCourse] = useState(null);
@@ -50,7 +53,7 @@ export default function CourseResultsPage() {
   const [resultsPage, setResultsPage] = useState(1);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const isActiveRef = useRef(true);
   const resultsRequestRef = useRef(0);
 
@@ -77,12 +80,17 @@ export default function CourseResultsPage() {
 
   async function loadRunResults(runId, runRow, page = 1) {
     const dashPeriod = runPeriod(runRow);
+    setPeriodStart("");
+    setPeriodEnd("");
     if (!dashPeriod) {
       setResults(null);
+      setResultsLoading(false);
       return;
     }
     const requestId = ++resultsRequestRef.current;
     setResultsLoading(true);
+    setPeriodStart("");
+    setPeriodEnd("");
     const dashParams = new URLSearchParams({
       periodStart: dashPeriod.periodStart,
       periodEnd: dashPeriod.periodEnd,
@@ -107,8 +115,13 @@ export default function CourseResultsPage() {
   }
 
   async function loadHistory(preferredRunId) {
-    setLoading(true);
+    setHistoryLoading(true);
+    setResultsLoading(true);
+    setPeriodStart("");
+    setPeriodEnd("");
     setError("");
+    setRuns([]);
+    setResults(null);
     try {
       const courseResult = await apiRequest(`/api/v1/courses/${courseId}`);
       if (!isActiveRef.current) {
@@ -143,15 +156,17 @@ export default function CourseResultsPage() {
         setResultsPage(1);
         setPeriodStart("");
         setPeriodEnd("");
+        setResultsLoading(false);
       }
     } catch (err) {
       if (!isActiveRef.current) {
         return;
       }
       setError(err.message);
+      setResultsLoading(false);
     } finally {
       if (isActiveRef.current) {
-        setLoading(false);
+        setHistoryLoading(false);
       }
     }
   }
@@ -253,9 +268,13 @@ export default function CourseResultsPage() {
                 periodEnd: exportPeriod.periodEnd,
                 runId: selectedRun,
               });
-              downloadAuthenticated(
-                `/api/v1/courses/${courseId}/classification-results/export?${params.toString()}`,
-                `${course?.code || "course"}-classification-results.csv`,
+              run(
+                () =>
+                  downloadAuthenticated(
+                    `/api/v1/courses/${courseId}/classification-results/export?${params.toString()}`,
+                    `${course?.code || "course"}-classification-results.csv`,
+                  ),
+                { success: "Results exported.", rethrow: true },
               ).catch((err) => setError(err.message));
             }}
           >
@@ -273,16 +292,16 @@ export default function CourseResultsPage() {
         <h2>Run history</h2>
         <p className="panel-desc">All classification runs for this course, newest first.</p>
         <ContentSkeleton
-          loading={loading}
+          loading={historyLoading}
           variant="table"
+          columns={skeletonColumns("runHistory")}
           rows={4}
-          columns={6}
           label="Retrieving assessment history…"
         />
-        {!loading && !error && runs.length === 0 ? (
+        {!historyLoading && !error && runs.length === 0 ? (
           <p className="lede">No classification runs yet. Generate classifications from Monitoring.</p>
         ) : null}
-        {runs.length > 0 ? (
+        {!historyLoading && runs.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>
@@ -330,7 +349,7 @@ export default function CourseResultsPage() {
         ) : null}
       </section>
 
-      {selectedRun && !loading && !resultsLoading && !error && !results?.results?.items?.length ? (
+      {selectedRun && !historyLoading && !resultsLoading && !error && !results?.results?.items?.length ? (
         <section className="card">
           <p className="lede">
             No student results were returned for this run. Try opening the run again or reload the page.
@@ -338,7 +357,13 @@ export default function CourseResultsPage() {
         </section>
       ) : null}
 
-      {resultsLoading || results?.results?.items?.length ? (
+      {resultsLoading ? (
+        <ContentSkeleton loading label="Loading results…">
+          <SkeletonPanel className="card table-card" titleWidth="34%" showTitle lines={["68%"]}>
+            <SkeletonTable columns={skeletonColumns("results")} rows={5} showFooter />
+          </SkeletonPanel>
+        </ContentSkeleton>
+      ) : results?.results?.items?.length ? (
         <section className="card table-card">
           <h2>Students in this run</h2>
           <p className="lede">
@@ -351,69 +376,58 @@ export default function CourseResultsPage() {
             {results ? ` Configuration v${results.configurationVersion}.` : ""} Counts stay on the snapshot used when the
             run was generated.
           </p>
-          <ContentSkeleton
-            loading={resultsLoading}
-            variant="table"
-            rows={5}
-            columns={5}
-            label="Loading results…"
-          />
-          {!resultsLoading && results?.results?.items?.length ? (
-            <>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th className="col-serial">S/N</th>
-                    <th>Student</th>
-                    <th>Score</th>
-                    <th>Classification</th>
-                    <th>Evidence</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.results.items.map((item, index) => (
-                    <tr key={item.id} className={`row-status-${item.classification}`}>
-                      <td className="col-serial">
-                        {serialNumber(index, { page: results.results.page, limit: results.results.limit })}
-                      </td>
-                      <td>
-                        {item.student?.fullName} ({item.student?.matriculationNumber})
-                      </td>
-                      <td>{item.displayScore == null ? "Not calculated" : `${item.displayScore}/100`}</td>
-                      <td>
-                        <ClassificationBadge classification={item.classification} />
-                      </td>
-                      <td>
-                        <Link to={`/courses/${courseId}/results/${item.id}`}>View evidence</Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {resultsTotalPages > 1 ? (
-                <div className="table-pager">
-                  <button
-                    type="button"
-                    className="secondary-btn"
-                    disabled={resultsPage <= 1}
-                    onClick={() => changeResultsPage(resultsPage - 1)}
-                  >
-                    Previous
-                  </button>
-                  <span className="muted">
-                    Page {resultsPage} of {resultsTotalPages} · {resultsTotal} students
-                  </span>
-                  <button
-                    type="button"
-                    className="secondary-btn"
-                    disabled={resultsPage >= resultsTotalPages}
-                    onClick={() => changeResultsPage(resultsPage + 1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              ) : null}
-            </>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="col-serial">S/N</th>
+                <th>Student</th>
+                <th>Score</th>
+                <th>Classification</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.results.items.map((item, index) => (
+                <tr key={item.id} className={`row-status-${item.classification}`}>
+                  <td className="col-serial">
+                    {serialNumber(index, { page: results.results.page, limit: results.results.limit })}
+                  </td>
+                  <td>
+                    {item.student?.fullName} ({item.student?.matriculationNumber})
+                  </td>
+                  <td>{item.displayScore == null ? "Not calculated" : `${item.displayScore}/100`}</td>
+                  <td>
+                    <ClassificationBadge classification={item.classification} />
+                  </td>
+                  <td>
+                    <Link to={`/courses/${courseId}/results/${item.id}`}>View evidence</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {resultsTotalPages > 1 ? (
+            <div className="table-pager">
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={resultsPage <= 1}
+                onClick={() => changeResultsPage(resultsPage - 1)}
+              >
+                Previous
+              </button>
+              <span className="muted">
+                Page {resultsPage} of {resultsTotalPages} · {resultsTotal} students
+              </span>
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={resultsPage >= resultsTotalPages}
+                onClick={() => changeResultsPage(resultsPage + 1)}
+              >
+                Next
+              </button>
+            </div>
           ) : null}
         </section>
       ) : null}

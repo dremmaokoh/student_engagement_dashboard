@@ -3,6 +3,7 @@ import ActivityRecord from "../../models/ActivityRecord.js";
 import ClassificationResult from "../../models/ClassificationResult.js";
 import Enrollment from "../../models/Enrollment.js";
 import ImportBatch from "../../models/ImportBatch.js";
+import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
 import { paginated, parsePagination } from "../../utils/pagination.js";
 import { toPublicStudent } from "../../utils/toPublic.js";
@@ -159,6 +160,31 @@ function countClassifications(results) {
     }
   }
   return counts;
+}
+
+const CLASSIFICATION_FILTER_VALUES = {
+  ACTIVE: CLASSIFICATIONS.ACTIVE,
+  "REQUIRING ATTENTION": CLASSIFICATIONS.REQUIRING_ATTENTION,
+  INACTIVE: CLASSIFICATIONS.INACTIVE,
+  "INSUFFICIENT DATA": CLASSIFICATIONS.INSUFFICIENT_DATA,
+};
+
+function parseClassificationFilter(value) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  const rawValues = Array.isArray(value) ? value : [value];
+  const normalized = rawValues
+    .flatMap((entry) => String(entry).split(","))
+    .map((entry) => entry.trim().toUpperCase().replace(/[_-]+/g, " "))
+    .filter(Boolean)
+    .map((entry) => {
+      if (CLASSIFICATION_FILTER_VALUES[entry]) {
+        return CLASSIFICATION_FILTER_VALUES[entry];
+      }
+      return entry.replace(/\s+/g, "_");
+    });
+  return [...new Set(normalized)];
 }
 
 async function latestRun(courseId, period) {
@@ -418,6 +444,7 @@ export async function generateClassifications({ course, lecturerId, input }) {
     throw new HttpError(500, "Classification results could not be saved.");
   }
 
+  invalidateDashboardCache(lecturerId);
   const counts = countClassifications(saved);
   logClassificationStage("generate.complete", {
     ...logContext,
@@ -594,10 +621,10 @@ export async function getDashboard({ course, query }) {
   const enrolledCount = await Enrollment.countDocuments({ courseId: course._id, status: "active" });
 
   const pagination = parsePagination(query);
-  const classification = query.classification ? String(query.classification).toUpperCase() : "";
+  const classifications = parseClassificationFilter(query.classification ?? query.classifications);
   const search = String(query.q || query.search || "").trim();
   const filtered = results.filter((result) => {
-    if (classification && result.classification !== classification) {
+    if (classifications.length && !classifications.includes(result.classification)) {
       return false;
     }
     return matchesSearch(result, search);

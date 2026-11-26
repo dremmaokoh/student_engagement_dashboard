@@ -3,12 +3,31 @@ import { parse } from "csv-parse/sync";
 import Enrollment from "../../models/Enrollment.js";
 import ImportBatch from "../../models/ImportBatch.js";
 import ActivityRecord from "../../models/ActivityRecord.js";
+import { assertCsvRowLimit, chunk } from "../../utils/csvLimits.js";
+import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
-import { CSV_COLUMNS, CSV_TEMPLATE } from "./csvColumns.js";
+import {
+  CSV_COLUMNS,
+  CSV_TEMPLATE,
+  canonicaliseActivityHeader,
+  normaliseActivityHeaderKey,
+} from "./csvColumns.js";
 import { missingOrDate, missingOrInteger, validateCounts, validatePeriod } from "./rowValidation.js";
 
 function assertActivityHeaders(headers) {
-  const normalised = headers.map((header) => header.trim()).filter(Boolean);
+  const seen = new Set();
+  const normalised = [];
+  for (const header of headers) {
+    const column = canonicaliseActivityHeader(header);
+    if (!column) {
+      continue;
+    }
+    if (seen.has(column)) {
+      throw new HttpError(400, `CSV contains duplicate column: ${column}.`);
+    }
+    seen.add(column);
+    normalised.push(column);
+  }
   const missing = CSV_COLUMNS.filter((column) => !normalised.includes(column));
   if (missing.length) {
     throw new HttpError(400, `CSV must include columns: ${missing.join(", ")}.`);
@@ -30,8 +49,13 @@ function fileHash(buffer) {
 }
 
 function rowValue(row, key) {
-  const match = Object.keys(row).find((name) => name.trim() === key);
+  const target = normaliseActivityHeaderKey(key);
+  const match = Object.keys(row).find((name) => normaliseActivityHeaderKey(name) === target);
   return match ? row[match] : undefined;
+}
+
+function rejection(rowNumber, field, reason, context = {}) {
+  return { rowNumber, field, reason, ...context };
 }
 
 function csvCell(value) {
@@ -50,7 +74,10 @@ export function getCsvTemplate() {
 }
 
 export async function buildCourseActivityCsvTemplate(courseId, { periodStart = "", periodEnd = "" } = {}) {
-  const enrollments = await Enrollment.find({ courseId, status: "active" }).populate("studentId");
+  const enrollments = await Enrollment.find({ courseId, status: "active" })
+    .select("studentId")
+    .populate("studentId", "fullName matriculationNumber")
+    .lean();
   enrollments.sort((left, right) =>
     String(left.studentId?.fullName || "").localeCompare(String(right.studentId?.fullName || "")),
   );
@@ -102,6 +129,7 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
   if (!records.length) {
     throw new HttpError(400, "The CSV file has no data rows.");
   }
+  assertCsvRowLimit(records);
 
   const headers = Object.keys(records[0]).map((header) => header.trim());
   assertActivityHeaders(headers);
@@ -112,9 +140,10 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
     throw new HttpError(400, "Default monitoring period dates are invalid.");
   }
 
-  const enrollments = await Enrollment.find({ courseId: course._id, status: "active" }).populate(
-    "studentId",
-  );
+  const enrollments = await Enrollment.find({ courseId: course._id, status: "active" })
+    .select("studentId")
+    .populate("studentId", "fullName matriculationNumber")
+    .lean();
   const studentsByMatric = new Map();
   for (const enrolment of enrollments) {
     if (enrolment.studentId?.matriculationNumber) {
@@ -125,6 +154,7 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
   const errors = [];
   const validRows = [];
   const seenStudents = new Set();
+  let duplicateCount = 0;
 
   records.forEach((raw, index) => {
     const rowNumber = index + 2;
@@ -132,19 +162,23 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
       .trim()
       .toUpperCase();
     if (!identifier) {
-      errors.push({ rowNumber, field: "studentIdentifier", reason: "studentIdentifier is required." });
+      errors.push(rejection(rowNumber, "studentIdentifier", "studentIdentifier is required."));
       return;
     }
 
     const student = studentsByMatric.get(identifier);
     if (!student) {
-      errors.push({
-        rowNumber,
-        field: "studentIdentifier",
-        reason: "Student must exist and be actively enrolled in this course.",
-      });
+      errors.push(
+        rejection(
+          rowNumber,
+          "studentIdentifier",
+          "Student must exist and be actively enrolled in this course.",
+          { studentIdentifier: identifier },
+        ),
+      );
       return;
     }
+    const studentContext = { studentIdentifier: identifier, studentName: student.fullName };
 
     const lastActivityAt = missingOrDate(rowValue(raw, "lastActivityAt"), "lastActivityAt");
     const materialsAvailable = missingOrInteger(rowValue(raw, "materialsAvailable"), "materialsAvailable");
@@ -181,17 +215,21 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
     ].filter(Boolean);
 
     if (fieldErrors.length) {
-      errors.push({ rowNumber, ...fieldErrors[0] });
+      errors.push(rejection(rowNumber, fieldErrors[0].field, fieldErrors[0].reason, studentContext));
       return;
     }
 
     const key = `${student._id}:${periodStartValue.value.toISOString()}:${periodEndValue.value.toISOString()}`;
     if (seenStudents.has(key)) {
-      errors.push({
-        rowNumber,
-        field: "studentIdentifier",
-        reason: "Duplicate student and monitoring period in this file.",
-      });
+      duplicateCount += 1;
+      errors.push(
+        rejection(
+          rowNumber,
+          "studentIdentifier",
+          "Duplicate student and monitoring period in this file.",
+          studentContext,
+        ),
+      );
       return;
     }
     seenStudents.add(key);
@@ -222,6 +260,7 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
     monitoringPeriodEnd: defaultEnd.value,
     validCount: validRows.length,
     rejectedCount: errors.length,
+    duplicateCount,
     skippedCount: 0,
     importedCount: 0,
     rowErrors: errors,
@@ -236,12 +275,15 @@ export async function confirmImport({ course, lecturerId, importId }) {
     _id: importId,
     courseId: course._id,
     lecturerId,
-  });
+  }).lean();
   if (!batch) {
     throw new HttpError(404, "Import preview not found.");
   }
   if (batch.status === "confirmed") {
     return toPublicBatch(batch);
+  }
+  if (!Array.isArray(batch.validRows) || batch.validRows.length === 0) {
+    throw new HttpError(400, "There are no valid records to import.");
   }
 
   let importedCount = 0;
@@ -253,33 +295,42 @@ export async function confirmImport({ course, lecturerId, importId }) {
     batch.monitoringPeriodEnd = firstRow.monitoringPeriodEnd;
   }
 
-  for (const row of batch.validRows) {
-    const existing = await ActivityRecord.findOne({
-      courseId: course._id,
-      studentId: row.studentId,
-      monitoringPeriodStart: row.monitoringPeriodStart,
-      monitoringPeriodEnd: row.monitoringPeriodEnd,
-    });
-    if (existing) {
-      skippedCount += 1;
-      continue;
-    }
+  const docs = batch.validRows.map((row) => ({
+    studentId: row.studentId,
+    courseId: course._id,
+    monitoringPeriodStart: row.monitoringPeriodStart,
+    monitoringPeriodEnd: row.monitoringPeriodEnd,
+    lastActivityAt: row.lastActivityAt,
+    materialsAvailable: row.materialsAvailable,
+    materialsAccessed: row.materialsAccessed,
+    assignmentsDue: row.assignmentsDue,
+    assignmentsSubmitted: row.assignmentsSubmitted,
+    importBatchId: batch._id,
+    sourceType: "csv",
+    validation: { rowNumber: row.rowNumber, status: "accepted" },
+  }));
 
-    await ActivityRecord.create({
-      studentId: row.studentId,
-      courseId: course._id,
-      monitoringPeriodStart: row.monitoringPeriodStart,
-      monitoringPeriodEnd: row.monitoringPeriodEnd,
-      lastActivityAt: row.lastActivityAt,
-      materialsAvailable: row.materialsAvailable,
-      materialsAccessed: row.materialsAccessed,
-      assignmentsDue: row.assignmentsDue,
-      assignmentsSubmitted: row.assignmentsSubmitted,
-      importBatchId: batch._id,
-      sourceType: "csv",
-      validation: { rowNumber: row.rowNumber, status: "accepted" },
-    });
-    importedCount += 1;
+  // The unique {courseId, studentId, period} index turns duplicates into
+  // skipped rows without a findOne + insert for every CSV row.
+  for (const part of chunk(docs)) {
+    try {
+      const inserted = await ActivityRecord.insertMany(part, { ordered: false });
+      importedCount += inserted.length;
+    } catch (error) {
+      const duplicateOnly =
+        error.code === 11000 ||
+        (Array.isArray(error.writeErrors) && error.writeErrors.length > 0 && error.writeErrors.every((e) => e.code === 11000));
+      if (!duplicateOnly) {
+        throw error;
+      }
+      const insertedCount =
+        error.insertedDocs?.length ??
+        error.result?.insertedCount ??
+        error.result?.result?.nInserted ??
+        0;
+      importedCount += insertedCount;
+      skippedCount += part.length - insertedCount;
+    }
   }
 
   batch.status = "confirmed";
@@ -287,18 +338,32 @@ export async function confirmImport({ course, lecturerId, importId }) {
   batch.skippedCount = skippedCount;
   batch.confirmedAt = new Date();
   batch.validRows = [];
-  await batch.save();
+  await ImportBatch.updateOne(
+    { _id: batch._id },
+    {
+      $set: {
+        status: batch.status,
+        importedCount,
+        skippedCount,
+        confirmedAt: batch.confirmedAt,
+        monitoringPeriodStart: batch.monitoringPeriodStart,
+        monitoringPeriodEnd: batch.monitoringPeriodEnd,
+        validRows: [],
+      },
+    },
+  );
+  invalidateDashboardCache(lecturerId);
 
   return toPublicBatch(batch);
 }
 
 export async function listImports(courseId) {
-  const batches = await ImportBatch.find({ courseId }).sort({ createdAt: -1 }).limit(50);
+  const batches = await ImportBatch.find({ courseId }).sort({ createdAt: -1 }).limit(50).lean();
   return batches.map((batch) => toPublicBatch(batch));
 }
 
 export async function getImport(courseId, lecturerId, importId) {
-  const batch = await ImportBatch.findOne({ _id: importId, courseId, lecturerId });
+  const batch = await ImportBatch.findOne({ _id: importId, courseId, lecturerId }).lean();
   if (!batch) {
     throw new HttpError(404, "Import not found.");
   }
@@ -306,20 +371,24 @@ export async function getImport(courseId, lecturerId, importId) {
 }
 
 function toPublicBatch(batch, { includePreview = false } = {}) {
+  const validCount = batch.validCount ?? 0;
+  const rejectedCount = batch.rejectedCount ?? 0;
   return {
     id: String(batch._id),
     filename: batch.filename,
     status: batch.status,
-    validCount: batch.validCount,
-    rejectedCount: batch.rejectedCount,
-    skippedCount: batch.skippedCount,
-    importedCount: batch.importedCount,
+    totalCount: validCount + rejectedCount,
+    validCount,
+    rejectedCount,
+    duplicateCount: batch.duplicateCount ?? 0,
+    skippedCount: batch.skippedCount ?? 0,
+    importedCount: batch.importedCount ?? 0,
     monitoringPeriodStart: batch.monitoringPeriodStart,
     monitoringPeriodEnd: batch.monitoringPeriodEnd,
     createdAt: batch.createdAt,
     confirmedAt: batch.confirmedAt,
-    errors: batch.rowErrors,
-    validRows: includePreview ? batch.validRows : undefined,
+    errors: batch.rowErrors ?? [],
+    validRows: includePreview ? batch.validRows ?? [] : undefined,
   };
 }
 

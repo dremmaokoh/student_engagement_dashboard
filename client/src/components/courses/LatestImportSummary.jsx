@@ -1,4 +1,4 @@
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonBar } from "../common/ContentSkeleton.jsx";
 
 function formatTimestamp(value) {
   if (!value) {
@@ -27,7 +27,23 @@ export default function LatestImportSummary({ latestImport, loading }) {
           period — prepare another template and import when you need a different period.
         </p>
       </div>
-      <LoadingState loading={loading} variant="inline" message="Loading import details…" />
+      <ContentSkeleton loading={loading} label="Loading import details…">
+        <dl
+          className="activity-import-used-dl course-monitoring-import-dl course-monitoring-import-dl-compact"
+          aria-hidden="true"
+        >
+          {Array.from({ length: 7 }, (_, index) => (
+            <div key={index}>
+              <dt>
+                <SkeletonBar width="70%" height={10} />
+              </dt>
+              <dd>
+                <SkeletonBar width="86%" height={14} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </ContentSkeleton>
       {!loading && !latestImport ? (
         <p className="course-monitoring-import-empty">
           No confirmed activity import yet. Download an activity template, add activity data, then import the file.

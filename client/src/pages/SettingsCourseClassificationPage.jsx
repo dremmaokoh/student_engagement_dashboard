@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonBar,
+  SkeletonPageHeader,
+  SkeletonPanel,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 function emptyForm() {
@@ -36,6 +43,7 @@ function formFromConfig(config) {
 
 export default function SettingsCourseClassificationPage() {
   const { courseId } = useParams();
+  const run = useApiAction();
   const [course, setCourse] = useState(null);
   const [config, setConfig] = useState(null);
   const [versions, setVersions] = useState([]);
@@ -47,6 +55,9 @@ export default function SettingsCourseClassificationPage() {
   async function load() {
     setLoading(true);
     setError("");
+    setCourse(null);
+    setConfig(null);
+    setVersions([]);
     try {
       const [courseResult, configResult, versionResult] = await Promise.all([
         apiRequest(`/api/v1/courses/${courseId}`),
@@ -82,21 +93,25 @@ export default function SettingsCourseClassificationPage() {
     setSaving(true);
     setError("");
     try {
-      await apiRequest(`/api/v1/courses/${courseId}/classification-config`, {
-        method: "POST",
-        body: {
-          classificationBoundaries: {
-            requiringAttentionMin: Number(form.requiringAttentionMin),
-            activeMin: Number(form.activeMin),
-          },
-          lastActivityBands: form.bands.map((band) => ({
-            minDays: Number(band.minDays),
-            maxDays: band.maxDays === "" ? null : Number(band.maxDays),
-            score: Number(band.score),
-          })),
-          changeNote: form.changeNote,
-        },
-      });
+      await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/classification-config`, {
+            method: "POST",
+            body: {
+              classificationBoundaries: {
+                requiringAttentionMin: Number(form.requiringAttentionMin),
+                activeMin: Number(form.activeMin),
+              },
+              lastActivityBands: form.bands.map((band) => ({
+                minDays: Number(band.minDays),
+                maxDays: band.maxDays === "" ? null : Number(band.maxDays),
+                score: Number(band.score),
+              })),
+              changeNote: form.changeNote,
+            },
+          }),
+        { success: "Classification configuration saved.", rethrow: true },
+      );
       await load();
     } catch (err) {
       setError(err.message);
@@ -107,8 +122,29 @@ export default function SettingsCourseClassificationPage() {
 
   if (loading) {
     return (
-      <main className="content">
-        <LoadingState loading variant="page" size="lg" message="Loading classification settings…" />
+      <main className="content settings-course-config-page">
+        <ContentSkeleton loading label="Loading classification settings…">
+          <SkeletonPageHeader />
+          <SkeletonPanel className="card settings-config-section" titleWidth="34%" showTitle lines={["68%"]}>
+            <SkeletonTable columns={skeletonColumns("bands")} rows={5} />
+          </SkeletonPanel>
+          <SkeletonPanel className="card settings-config-section settings-config-auto" titleWidth="40%" showTitle lines={["74%"]} />
+          <SkeletonPanel className="card settings-config-section settings-config-auto" titleWidth="38%" showTitle lines={["72%"]} />
+          <SkeletonPanel className="card settings-config-section" titleWidth="42%" showTitle>
+            <div className="stack-form" aria-hidden="true">
+              <SkeletonBar width="26%" height={16} />
+              <SkeletonBar width="22%" height={40} />
+              <SkeletonBar width="22%" height={16} />
+              <SkeletonBar width="22%" height={40} />
+              <SkeletonBar width="18%" height={16} />
+              <SkeletonBar width="40%" height={40} />
+              <SkeletonBar width="20%" height={40} />
+            </div>
+          </SkeletonPanel>
+          <SkeletonPanel className="card table-card" titleWidth="26%" showTitle lines={["58%"]}>
+            <SkeletonTable columns={skeletonColumns("versionHistory")} rows={3} />
+          </SkeletonPanel>
+        </ContentSkeleton>
       </main>
     );
   }

@@ -61,7 +61,11 @@ export default function CourseConfigurationModal({ open, onClose, courseId, peri
   const monitoringPath = courseMonitoringPath(courseId, { periodStart, periodEnd });
 
   return (
-    <dialog ref={dialogRef} className="student-modal course-workspace-modal course-config-modal" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="student-modal student-modal--large course-workspace-modal course-config-modal"
+      onClose={onClose}
+    >
       <div className="student-modal-form course-workspace-modal-body">
         <header className="student-modal-header">
           <h2>View configuration</h2>

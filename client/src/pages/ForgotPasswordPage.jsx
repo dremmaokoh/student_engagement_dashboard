@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import AuthLayout from "../components/layout/AuthLayout.jsx";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 const pageCopy = {
@@ -10,6 +11,7 @@ const pageCopy = {
 };
 
 export default function ForgotPasswordPage() {
+  const run = useApiAction();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -25,10 +27,18 @@ export default function ForgotPasswordPage() {
     setHint("");
     setSubmitting(true);
     try {
-      const result = await apiRequest("/api/v1/auth/forgot-password", {
-        method: "POST",
-        body: { email },
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest("/api/v1/auth/forgot-password", {
+            method: "POST",
+            body: { email },
+          }),
+        {
+          success: (payload) => payload.data.message || "Password reset email sent.",
+          error: (err) => err.message,
+          rethrow: true,
+        },
+      );
       setMessage(result.data.message);
       if (result.data.hint) {
         setHint(result.data.hint);

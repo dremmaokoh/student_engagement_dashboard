@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonChart,
+  SkeletonPageHeader,
+  SkeletonPanel,
+  SkeletonSummaryGrid,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
 import ClassificationRunChanges from "../components/courses/ClassificationRunChanges.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import StudentsNeedingAttention from "../components/courses/StudentsNeedingAttention.jsx";
@@ -11,57 +17,21 @@ import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
 import SummaryCard from "../components/design/SummaryCard.jsx";
 import {
+  assertAttentionDashboardsMatchRun,
+  ATTENTION_CLASSIFICATIONS,
+  attentionDashboardParams,
+  attentionItemsFromDashboards,
+  latestPeriodQuery,
+} from "../lib/attentionItems.js";
+import {
   courseMonitoringPath,
   courseOverviewPath,
   readCoursePeriod,
 } from "../lib/coursePeriod.js";
-import { formatCountDelta, runPeriodLabel, ymd } from "../lib/classificationRuns.js";
+import { formatCountDelta, runPeriodLabel } from "../lib/classificationRuns.js";
 import { ALL_CLASSIFICATIONS } from "../lib/classificationTrend.js";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import { apiRequest } from "../services/api.js";
-
-const ATTENTION_LIMIT = 5;
-
-function latestPeriodQuery(run) {
-  if (!run?.monitoringPeriodStart || !run?.monitoringPeriodEnd) {
-    return null;
-  }
-  return {
-    periodStart: ymd(run.monitoringPeriodStart),
-    periodEnd: ymd(run.monitoringPeriodEnd),
-  };
-}
-
-async function fetchAttentionStudents(courseId, runId, periodStart, periodEnd) {
-  const base = new URLSearchParams({
-    periodStart,
-    periodEnd,
-    runId,
-    limit: String(ATTENTION_LIMIT),
-    sortBy: "overallScore",
-    sortDir: "asc",
-    page: "1",
-  });
-  const [inactive, attention] = await Promise.all([
-    apiRequest(`/api/v1/courses/${courseId}/dashboard?${base}&classification=INACTIVE`),
-    apiRequest(`/api/v1/courses/${courseId}/dashboard?${base}&classification=REQUIRING_ATTENTION`),
-  ]);
-  const combined = [];
-  for (const item of inactive.data.results?.items || []) {
-    if (combined.length >= ATTENTION_LIMIT) {
-      break;
-    }
-    combined.push(item);
-  }
-  for (const item of attention.data.results?.items || []) {
-    if (combined.length >= ATTENTION_LIMIT) {
-      break;
-    }
-    if (!combined.some((row) => row.studentId === item.studentId)) {
-      combined.push(item);
-    }
-  }
-  return combined;
-}
 
 function deltaHint(deltaText) {
   if (!deltaText) {
@@ -81,7 +51,6 @@ export default function CourseOverviewPage() {
   const [attentionItems, setAttentionItems] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const isActiveRef = useRef(true);
 
   const latestRun = allRuns[0] || null;
   const previousRun = allRuns[1] || null;
@@ -93,15 +62,19 @@ export default function CourseOverviewPage() {
     return courseOverviewPath(courseId, period);
   }, [courseId, latestPeriod, appliedPeriod]);
 
-  async function load() {
+  async function load(isActive) {
     setLoading(true);
     setError("");
+    setCourse(null);
+    setAllRuns([]);
+    setEnrolledCount(null);
+    setAttentionItems([]);
     try {
       const [courseResult, runsResult] = await Promise.all([
         apiRequest(`/api/v1/courses/${courseId}`),
         apiRequest(`/api/v1/courses/${courseId}/classification-runs?scope=all`),
       ]);
-      if (!isActiveRef.current) {
+      if (!isActive()) {
         return;
       }
       setCourse(courseResult.data.course);
@@ -120,22 +93,19 @@ export default function CourseOverviewPage() {
         throw new Error("Latest classification run is missing monitoring period dates.");
       }
 
-      const dashParams = new URLSearchParams({
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-        runId: latest.runId,
-        limit: "1",
-        page: "1",
-      });
-      const [dash, attention] = await Promise.all([
-        apiRequest(`/api/v1/courses/${courseId}/dashboard?${dashParams.toString()}`),
-        fetchAttentionStudents(courseId, latest.runId, period.periodStart, period.periodEnd),
-      ]);
-      if (!isActiveRef.current) {
+      const dashboards = await Promise.all(
+        ATTENTION_CLASSIFICATIONS.map((classification) => {
+          const params = attentionDashboardParams(period, latest.runId, classification);
+          return apiRequest(`/api/v1/courses/${courseId}/dashboard?${params.toString()}`);
+        }),
+      );
+      if (!isActive()) {
         return;
       }
-      setEnrolledCount(dash.data.enrolledCount ?? null);
-      setAttentionItems(attention);
+      const dashboardData = dashboards.map((response) => response.data);
+      assertAttentionDashboardsMatchRun(dashboardData, latest);
+      setEnrolledCount(dashboardData[0]?.enrolledCount ?? null);
+      setAttentionItems(attentionItemsFromDashboards(dashboardData));
 
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set("periodStart", period.periodStart);
@@ -143,7 +113,7 @@ export default function CourseOverviewPage() {
       nextParams.set("runId", latest.runId);
       setSearchParams(nextParams, { replace: true });
     } catch (err) {
-      if (!isActiveRef.current) {
+      if (!isActive()) {
         return;
       }
       setError(err.message);
@@ -151,17 +121,17 @@ export default function CourseOverviewPage() {
       setAttentionItems([]);
       setEnrolledCount(null);
     } finally {
-      if (isActiveRef.current) {
+      if (isActive()) {
         setLoading(false);
       }
     }
   }
 
   useEffect(() => {
-    isActiveRef.current = true;
-    load();
+    let active = true;
+    load(() => active);
     return () => {
-      isActiveRef.current = false;
+      active = false;
     };
   }, [courseId]);
 
@@ -178,19 +148,25 @@ export default function CourseOverviewPage() {
             { label: course?.code || "Course" },
           ]}
         />
-        <h1>
-          {course?.code} · {course?.name}
-        </h1>
-        <p className="lede">
-          {course?.description ||
-            "Classification summary and trends from saved runs. Latest results are shown by default."}
-        </p>
-        {latestPeriod ? (
-          <p className="panel-desc course-overview-latest-period">
-            Latest classification monitoring period: {latestPeriod.periodStart} to {latestPeriod.periodEnd}.
-            {previousRun ? " Summary cards compare with the previous run." : " Generate again to enable comparisons."}
-          </p>
-        ) : null}
+        {loading ? (
+          <SkeletonPageHeader />
+        ) : (
+          <>
+            <h1>
+              {course?.code} · {course?.name}
+            </h1>
+            <p className="lede">
+              {course?.description ||
+                "Classification summary and trends from saved runs. Latest results are shown by default."}
+            </p>
+            {latestPeriod ? (
+              <p className="panel-desc course-overview-latest-period">
+                Latest classification monitoring period: {latestPeriod.periodStart} to {latestPeriod.periodEnd}.
+                {previousRun ? " Summary cards compare with the previous run." : " Generate again to enable comparisons."}
+              </p>
+            ) : null}
+          </>
+        )}
         {error ? (
           <p className="form-error" role="alert">
             {error}
@@ -200,7 +176,25 @@ export default function CourseOverviewPage() {
 
       <CourseTabs courseId={courseId} />
 
-      <LoadingState loading={loading} variant="section" message="Preparing engagement analytics…" />
+      <ContentSkeleton loading={loading} label="Loading course overview…">
+        <SkeletonSummaryGrid className="status-grid course-overview-kpis" count={5} withDelta />
+        <SkeletonPanel className="card course-overview-section" titleWidth="36%" showTitle lines={["64%"]}>
+          <SkeletonChart />
+        </SkeletonPanel>
+        <SkeletonPanel className="card course-overview-section" titleWidth="32%" showTitle lines={["58%"]}>
+          <SkeletonChart />
+        </SkeletonPanel>
+        <SkeletonPanel className="card course-overview-section" titleWidth="30%" showTitle lines={["70%", "52%"]} />
+        <SkeletonPanel className="card course-overview-section course-overview-attention" titleWidth="42%" showTitle>
+          <SkeletonTable
+            columns={skeletonColumns("attention")}
+            rows={4}
+            tableClassName="students-directory-table course-overview-attention-table"
+            wrapClassName="table-card students-table-wrap"
+            showFooter
+          />
+        </SkeletonPanel>
+      </ContentSkeleton>
 
       {!loading && !error && !hasRuns ? (
         <section className="card course-overview-section course-overview-empty-runs">
@@ -221,12 +215,12 @@ export default function CourseOverviewPage() {
             <SummaryCard
               status="ENROLLED"
               label="Enrolled students"
-              value={loading || enrolledCount === null ? "—" : enrolledCount}
+              value={enrolledCount === null ? "—" : enrolledCount}
             />
             <SummaryCard
               status="ACTIVE"
               label="Active"
-              value={loading || !latestCounts ? "—" : latestCounts.ACTIVE}
+              value={!latestCounts ? "—" : latestCounts.ACTIVE}
               delta={
                 previousRun && latestCounts
                   ? deltaHint(formatCountDelta(latestCounts.ACTIVE, previousRun.counts?.ACTIVE))
@@ -236,7 +230,7 @@ export default function CourseOverviewPage() {
             <SummaryCard
               status="REQUIRING_ATTENTION"
               label="Requiring Attention"
-              value={loading || !latestCounts ? "—" : latestCounts.REQUIRING_ATTENTION}
+              value={!latestCounts ? "—" : latestCounts.REQUIRING_ATTENTION}
               delta={
                 previousRun && latestCounts
                   ? deltaHint(formatCountDelta(latestCounts.REQUIRING_ATTENTION, previousRun.counts?.REQUIRING_ATTENTION))
@@ -246,7 +240,7 @@ export default function CourseOverviewPage() {
             <SummaryCard
               status="INACTIVE"
               label="Inactive"
-              value={loading || !latestCounts ? "—" : latestCounts.INACTIVE}
+              value={!latestCounts ? "—" : latestCounts.INACTIVE}
               delta={
                 previousRun && latestCounts
                   ? deltaHint(formatCountDelta(latestCounts.INACTIVE, previousRun.counts?.INACTIVE))
@@ -256,7 +250,7 @@ export default function CourseOverviewPage() {
             <SummaryCard
               status="INSUFFICIENT_DATA"
               label="Insufficient Data"
-              value={loading || !latestCounts ? "—" : latestCounts.INSUFFICIENT_DATA}
+              value={!latestCounts ? "—" : latestCounts.INSUFFICIENT_DATA}
               delta={
                 previousRun && latestCounts
                   ? deltaHint(
@@ -270,10 +264,10 @@ export default function CourseOverviewPage() {
           <section className="card course-overview-section">
             <h2>Classification distribution</h2>
             <p className="panel-desc">Latest classification run.</p>
-            {!latestCounts ? (
-              <LoadingState loading variant="inline" message="Preparing classification summary…" />
-            ) : (
+            {latestCounts ? (
               <DistributionChart counts={latestCounts} showHeading />
+            ) : (
+              <p className="muted">No classification counts are available for this run.</p>
             )}
           </section>
 

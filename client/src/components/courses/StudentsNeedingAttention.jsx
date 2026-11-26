@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton from "../common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../../lib/skeletonColumns.js";
 import ClassificationBadge from "../design/ClassificationBadge.jsx";
 import { formatScore } from "../../lib/classifications.js";
 import { courseMonitoringPath } from "../../lib/coursePeriod.js";
@@ -31,7 +32,15 @@ export default function StudentsNeedingAttention({
         </Link>
       </div>
 
-      <LoadingState loading={loading} variant="inline" message="Loading student records…" />
+      <ContentSkeleton
+        loading={loading}
+        variant="table"
+        columns={skeletonColumns("attention")}
+        rows={4}
+        tableClassName="students-directory-table course-overview-attention-table"
+        wrapClassName="table-card students-table-wrap"
+        label="Loading student records…"
+      />
       {!loading && items.length === 0 ? (
         <p className="course-overview-attention-empty">No students currently require attention.</p>
       ) : null}

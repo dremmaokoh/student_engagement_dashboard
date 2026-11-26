@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest, downloadAuthenticated } from "../services/api.js";
 
 const emptyForm = { name: "", code: "", description: "" };
 
+function rosterImportSummary(result) {
+  const { counts } = result.data;
+  return `Imported ${counts.coursesCreated + counts.coursesUpdated} courses, ${counts.studentsCreated + counts.studentsUpdated} students, ${counts.enrolmentsCreated + counts.enrolmentsReactivated} enrolments.`;
+}
+
 export default function CoursesPage() {
   const location = useLocation();
+  const run = useApiAction();
   const fromCourses = returnNavigationState(`${location.pathname}${location.search}`, "Back to Courses");
   const [courses, setCourses] = useState([]);
   const [search, setSearch] = useState("");
@@ -24,6 +32,7 @@ export default function CoursesPage() {
   async function loadCourses(q = search) {
     setLoading(true);
     setError("");
+    setCourses([]);
     try {
       const params = new URLSearchParams({ limit: "50" });
       if (q) {
@@ -47,7 +56,10 @@ export default function CoursesPage() {
     setSaving(true);
     setError("");
     try {
-      await apiRequest("/api/v1/courses", { method: "POST", body: form });
+      await run(() => apiRequest("/api/v1/courses", { method: "POST", body: form }), {
+        success: "Course created.",
+        rethrow: true,
+      });
       setForm(emptyForm);
       setShowAdd(false);
       await loadCourses();
@@ -71,10 +83,14 @@ export default function CoursesPage() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const result = await apiRequest("/api/v1/courses/import-roster/preview", {
-        method: "POST",
-        body,
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest("/api/v1/courses/import-roster/preview", {
+            method: "POST",
+            body,
+          }),
+        { rethrow: true },
+      );
       setPreview(result.data);
     } catch (err) {
       setError(err.message);
@@ -90,19 +106,32 @@ export default function CoursesPage() {
     setImporting(true);
     setError("");
     try {
-      const result = await apiRequest("/api/v1/courses/import-roster/confirm", {
-        method: "POST",
-        body: { importId: preview.importId },
-      });
-      setImportMessage(
-        `Imported ${result.data.counts.coursesCreated + result.data.counts.coursesUpdated} courses, ${result.data.counts.studentsCreated + result.data.counts.studentsUpdated} students, ${result.data.counts.enrolmentsCreated + result.data.counts.enrolmentsReactivated} enrolments.`,
+      const { data: result } = await run(
+        () =>
+          apiRequest("/api/v1/courses/import-roster/confirm", {
+            method: "POST",
+            body: { importId: preview.importId },
+          }),
+        { success: rosterImportSummary, rethrow: true },
       );
+      setImportMessage(rosterImportSummary(result));
       setPreview(null);
       await loadCourses();
     } catch (err) {
       setError(err.message);
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function downloadTemplate() {
+    try {
+      await run(
+        () => downloadAuthenticated("/api/v1/courses/import-roster/template", "course-enrolment-template.csv"),
+        { success: "Template downloaded.", rethrow: true },
+      );
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -117,15 +146,7 @@ export default function CoursesPage() {
           </p>
         </div>
         <div className="courses-header-actions">
-          <button
-            type="button"
-            className="secondary-btn courses-template-btn"
-            onClick={() =>
-              downloadAuthenticated("/api/v1/courses/import-roster/template", "course-enrolment-template.csv").catch(
-                (err) => setError(err.message),
-              )
-            }
-          >
+          <button type="button" className="secondary-btn courses-template-btn" onClick={downloadTemplate}>
             Download template
           </button>
           <label className="primary-btn file-btn courses-import-btn">
@@ -140,7 +161,7 @@ export default function CoursesPage() {
         </div>
       </header>
 
-      {error ? (
+      {!loading && error ? (
         <p className="form-error courses-page-error" role="alert">
           {error}
         </p>
@@ -258,23 +279,17 @@ export default function CoursesPage() {
         <ContentSkeleton
           loading={loading}
           variant="table"
+          columns={skeletonColumns("courses")}
           rows={6}
-          columns={6}
+          tableClassName="courses-directory-table"
+          wrapClassName="table-card students-table-wrap"
           label="Fetching course information…"
         />
         {!loading && courses.length === 0 ? (
           <div className="students-empty students-empty-compact">
             <strong>No courses yet</strong>
             <p>Import course details to start monitoring students.</p>
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() =>
-                downloadAuthenticated("/api/v1/courses/import-roster/template", "course-enrolment-template.csv").catch(
-                  (err) => setError(err.message),
-                )
-              }
-            >
+            <button type="button" className="secondary-btn" onClick={downloadTemplate}>
               Download template
             </button>
           </div>

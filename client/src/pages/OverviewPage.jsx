@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import DesignLegend from "../components/design/DesignLegend.jsx";
 import { useAuth } from "../features/auth/AuthContext.jsx";
 import { apiRequest } from "../services/api.js";
@@ -14,6 +15,8 @@ export default function OverviewPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setError("");
+    setCourses([]);
     Promise.all([apiRequest("/api/v1/health"), apiRequest("/api/v1/courses?limit=20")])
       .then(([status, courseResult]) => {
         if (cancelled) {
@@ -47,7 +50,7 @@ export default function OverviewPage() {
 
       <section className="card table-card">
         <h2>Your courses</h2>
-        {error ? (
+        {!loading && error ? (
           <p className="form-error" role="alert">
             {error}
           </p>
@@ -55,8 +58,8 @@ export default function OverviewPage() {
         <ContentSkeleton
           loading={loading}
           variant="table"
+          columns={skeletonColumns("legacyCourses")}
           rows={3}
-          columns={4}
           label="Fetching course information…"
         />
         {!loading && courses.length === 0 ? (

@@ -92,7 +92,10 @@ export async function downloadAuthenticated(path, filename) {
   const response = await fetch(path, { headers, cache: "no-store" });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || payload.error || `Download failed (${response.status})`);
+    const error = new Error(payload.message || payload.error || `Download failed (${response.status})`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
 
   const resolvedFilename =

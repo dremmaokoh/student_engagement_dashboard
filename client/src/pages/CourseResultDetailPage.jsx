@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonBar,
+  SkeletonPageHeader,
+  SkeletonPanel,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import ScoreBar from "../components/dashboard/ScoreBar.jsx";
@@ -139,6 +145,8 @@ export default function CourseResultDetailPage() {
     async function load() {
       setLoading(true);
       setError("");
+      setCourse(null);
+      setResult(null);
       try {
         const [courseResult, detail] = await Promise.all([
           apiRequest(`/api/v1/courses/${courseId}`),
@@ -158,7 +166,40 @@ export default function CourseResultDetailPage() {
   if (loading) {
     return (
       <main className="content">
-        <LoadingState loading variant="page" size="lg" message="Retrieving assessment evidence…" />
+        <ContentSkeleton loading label="Retrieving assessment evidence…">
+          <SkeletonPageHeader />
+          <SkeletonPanel className="card result-overall-card" titleWidth="30%" showTitle lines={["62%"]}>
+            <div className="result-overall-layout" aria-hidden="true">
+              <div className="result-overall-summary">
+                <SkeletonBar width="34%" height={28} />
+                <SkeletonBar width="28%" />
+                <SkeletonBar width="50%" />
+              </div>
+              <SkeletonTable
+                columns={skeletonColumns("resultBreakdown")}
+                rows={3}
+                tableClassName="result-breakdown-table"
+                wrapClassName="result-breakdown-table-scroll"
+                showTableFooter
+              />
+            </div>
+          </SkeletonPanel>
+          <SkeletonPanel className="card" titleWidth="36%" showTitle>
+            <div className="status-grid result-indicator-grid" aria-hidden="true">
+              {Array.from({ length: 3 }, (_, index) => (
+                <article className="indicator-card" key={index}>
+                  <div className="result-card-header">
+                    <SkeletonBar width="52%" height={16} />
+                    <SkeletonBar width="24%" height={18} />
+                  </div>
+                  <SkeletonBar width="40%" height={28} />
+                  <SkeletonBar width="28%" height={10} />
+                  <SkeletonBar width="48%" height={10} />
+                </article>
+              ))}
+            </div>
+          </SkeletonPanel>
+        </ContentSkeleton>
       </main>
     );
   }

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { isProduction } from "./env.js";
 
 export function isDatabaseConnected() {
   return mongoose.connection.readyState === 1;
@@ -17,6 +18,9 @@ export async function ensureDatabase(uri) {
 
 export async function connectDatabase(uri) {
   mongoose.set("strictQuery", true);
+  if (isProduction()) {
+    mongoose.set("autoIndex", false);
+  }
 
   if (isDatabaseConnected()) {
     return mongoose.connection;
@@ -24,6 +28,7 @@ export async function connectDatabase(uri) {
 
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 20000,
+    maxPoolSize: 10,
   });
 
   return mongoose.connection;

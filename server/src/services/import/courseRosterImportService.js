@@ -2,7 +2,10 @@ import { parse } from "csv-parse/sync";
 import Course from "../../models/Course.js";
 import Enrollment from "../../models/Enrollment.js";
 import Student from "../../models/Student.js";
+import { assertCsvRowLimit, chunk } from "../../utils/csvLimits.js";
+import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
+import { createPreviewStore } from "../../utils/previewStore.js";
 import { toPublicCourse } from "../../utils/toPublic.js";
 import { normalizeStudentEmail } from "../../validators/studentCommunicationValidators.js";
 
@@ -31,7 +34,7 @@ function csvCell(value) {
 }
 
 export async function buildCourseRosterCsvTemplate(lecturerId) {
-  const courses = await Course.find({ lecturerId, status: "active" }).sort({ code: 1 });
+  const courses = await Course.find({ lecturerId, status: "active" }).sort({ code: 1 }).lean();
   const lines = [COURSE_ROSTER_COLUMNS.join(",")];
   for (const course of courses) {
     lines.push(
@@ -41,7 +44,7 @@ export async function buildCourseRosterCsvTemplate(lecturerId) {
   return `${lines.join("\n")}\n`;
 }
 
-const previews = new Map();
+const previews = createPreviewStore();
 
 function cell(row, key) {
   const value = row[key];
@@ -76,6 +79,7 @@ function parseRows(buffer) {
   if (!records.length) {
     throw new HttpError(400, "The CSV has no data rows.");
   }
+  assertCsvRowLimit(records);
   const headers = Object.keys(records[0] || {});
   for (const required of COURSE_ROSTER_REQUIRED_COLUMNS) {
     if (!headers.includes(required)) {
@@ -160,7 +164,7 @@ export function previewCourseRosterImport(lecturerId, buffer, filename) {
       uniqueStudents: new Set(validRows.map((row) => row.studentIdentifier)).size,
     },
   };
-  previews.set(importId, preview);
+  previews.set(importId, String(lecturerId), preview);
 
   return {
     importId,
@@ -171,16 +175,20 @@ export function previewCourseRosterImport(lecturerId, buffer, filename) {
   };
 }
 
+const studentKey = (identifier) => String(identifier || "").trim().toUpperCase();
+const enrollmentKey = (courseId, studentId) => `${String(courseId)}:${String(studentId)}`;
+
 export async function confirmCourseRosterImport(lecturerId, importId) {
-  const preview = previews.get(importId);
-  if (!preview || preview.lecturerId !== String(lecturerId)) {
-    throw new HttpError(404, "Course import preview was not found or has expired.");
+  const ownerKey = String(lecturerId);
+  const preview = previews.get(importId, ownerKey);
+  if (!preview) {
+    throw new HttpError(404, "Preview expired, please upload the file again.");
   }
   if (!preview.validRows.length) {
     throw new HttpError(400, "There are no valid rows to import.");
   }
 
-  const courseMap = new Map();
+  const rows = preview.validRows;
   let coursesCreated = 0;
   let coursesUpdated = 0;
   let studentsCreated = 0;
@@ -189,89 +197,213 @@ export async function confirmCourseRosterImport(lecturerId, importId) {
   let enrolmentsReactivated = 0;
   let enrolmentsSkipped = 0;
 
-  for (const row of preview.validRows) {
-    let course = courseMap.get(row.courseCode);
-    if (!course) {
-      course = await Course.findOne({ lecturerId, code: row.courseCode });
-      if (!course) {
-        course = await Course.create({
-          lecturerId,
-          code: row.courseCode,
-          name: row.courseName,
-          description: "",
-          status: "active",
-        });
-        coursesCreated += 1;
-      } else {
-        let changed = false;
-        if (row.courseName && course.name !== row.courseName) {
-          course.name = row.courseName;
-          changed = true;
-        }
-        if (course.status === "archived") {
-          course.status = "active";
-          changed = true;
-        }
-        if (changed) {
-          await course.save();
-          coursesUpdated += 1;
-        }
-      }
-      courseMap.set(row.courseCode, course);
+  // One query for every course on the page, instead of one per row.
+  const courseNamesByCode = new Map();
+  for (const row of rows) {
+    if (!courseNamesByCode.has(row.courseCode)) {
+      courseNamesByCode.set(row.courseCode, row.courseName);
     }
+  }
+  const courseCodes = [...courseNamesByCode.keys()];
+  const existingCourses = await Course.find({ lecturerId: ownerKey, code: { $in: courseCodes } })
+    .select("code name status")
+    .lean();
+  const courseMap = new Map(existingCourses.map((course) => [course.code, { ...course }]));
 
-    let student = await Student.findOne({ matriculationNumber: row.studentIdentifier });
-    if (!student) {
-      student = await Student.create({
-        fullName: row.studentName,
-        matriculationNumber: row.studentIdentifier,
-        ...(row.studentEmail ? { email: row.studentEmail } : {}),
-      });
-      studentsCreated += 1;
-    } else {
-      let studentChanged = false;
-      if (row.studentName && student.fullName !== row.studentName) {
-        student.fullName = row.studentName;
-        studentChanged = true;
-      }
-      if (row.studentEmail) {
-        if (student.email && student.email !== row.studentEmail) {
-          throw new HttpError(
-            409,
-            `Row ${row.rowNumber}: student ${row.studentIdentifier} has a different email on record.`,
-          );
-        }
-        if (!student.email) {
-          student.email = row.studentEmail;
-          studentChanged = true;
-        }
-      }
-      if (studentChanged) {
-        await student.save();
-        studentsUpdated += 1;
-      }
-    }
-
-    const existing = await Enrollment.findOne({ studentId: student._id, courseId: course._id });
-    if (!existing) {
-      await Enrollment.create({
-        studentId: student._id,
-        courseId: course._id,
+  const courseCreates = [];
+  for (const [code, name] of courseNamesByCode) {
+    if (!courseMap.has(code)) {
+      courseCreates.push({
+        lecturerId: ownerKey,
+        code,
+        name,
+        description: "",
         status: "active",
-        enrolledAt: new Date(),
       });
+    }
+  }
+  coursesCreated = courseCreates.length;
+
+  let createdCourseDocs = [];
+  if (courseCreates.length) {
+    for (const part of chunk(courseCreates)) {
+      createdCourseDocs = createdCourseDocs.concat(await Course.insertMany(part, { ordered: false }));
+    }
+    for (const course of createdCourseDocs) {
+      courseMap.set(course.code, {
+        _id: course._id,
+        code: course.code,
+        name: course.name,
+        status: course.status,
+      });
+    }
+  }
+
+  const courseUpdateOps = [];
+  const existingCourseCodes = new Set(existingCourses.map((course) => course.code));
+  for (const code of existingCourseCodes) {
+    const course = courseMap.get(code);
+    const desiredName = courseNamesByCode.get(code);
+    const changes = {};
+    if (desiredName && course.name !== desiredName) {
+      changes.name = desiredName;
+      course.name = desiredName;
+    }
+    if (course.status === "archived") {
+      changes.status = "active";
+      course.status = "active";
+    }
+    if (Object.keys(changes).length) {
+      // The old code saved once per course, so count one update per course.
+      coursesUpdated += 1;
+      courseUpdateOps.push({
+        updateOne: { filter: { _id: course._id }, update: { $set: changes } },
+      });
+    }
+  }
+  for (const part of chunk(courseUpdateOps)) {
+    await Course.bulkWrite(part);
+  }
+
+  // One query for all students, then one insert and one bulk update set.
+  const studentsByKey = new Map();
+  for (const row of rows) {
+    const key = studentKey(row.studentIdentifier);
+    if (!studentsByKey.has(key)) {
+      studentsByKey.set(key, {
+        _id: null,
+        matriculationNumber: key,
+        fullName: row.studentName,
+        email: row.studentEmail || "",
+      });
+    }
+  }
+  const studentKeys = [...studentsByKey.keys()];
+  const existingStudents = await Student.find({ matriculationNumber: { $in: studentKeys } })
+    .select("fullName matriculationNumber email")
+    .lean();
+  for (const student of existingStudents) {
+    studentsByKey.set(studentKey(student.matriculationNumber), { ...student });
+  }
+
+  const studentCreates = [];
+  const studentUpdateOps = [];
+  const changedStudentKeys = new Set();
+  for (const row of rows) {
+    const key = studentKey(row.studentIdentifier);
+    const student = studentsByKey.get(key);
+    if (!student) continue;
+    let changed = false;
+    if (row.studentName && student.fullName !== row.studentName) {
+      student.fullName = row.studentName;
+      changed = true;
+    }
+    if (row.studentEmail) {
+      if (student.email && student.email !== row.studentEmail) {
+        throw new HttpError(
+          409,
+          `Row ${row.rowNumber}: student ${row.studentIdentifier} has a different email on record.`,
+        );
+      }
+      if (!student.email) {
+        student.email = row.studentEmail;
+        changed = true;
+      }
+    }
+    if (changed) {
+      changedStudentKeys.add(key);
+    }
+  }
+  // The old code saved once per changed student, so count one update per student.
+  studentsUpdated = changedStudentKeys.size;
+
+  for (const key of studentKeys) {
+    const student = studentsByKey.get(key);
+    if (!student._id) {
+      studentCreates.push({
+        fullName: student.fullName,
+        matriculationNumber: student.matriculationNumber,
+        ...(student.email ? { email: student.email } : {}),
+      });
+    }
+  }
+  studentsCreated = studentCreates.length;
+
+  let createdStudentDocs = [];
+  if (studentCreates.length) {
+    for (const part of chunk(studentCreates)) {
+      createdStudentDocs = createdStudentDocs.concat(await Student.insertMany(part, { ordered: false }));
+    }
+    for (const student of createdStudentDocs) {
+      const existing = studentsByKey.get(studentKey(student.matriculationNumber));
+      if (existing) {
+        existing._id = student._id;
+      }
+    }
+  }
+
+  for (const key of changedStudentKeys) {
+    const student = studentsByKey.get(key);
+    studentUpdateOps.push({
+      updateOne: {
+        filter: { matriculationNumber: key },
+        update: { $set: { fullName: student.fullName, ...(student.email ? { email: student.email } : {}) } },
+      },
+    });
+  }
+  for (const part of chunk(studentUpdateOps)) {
+    await Student.bulkWrite(part);
+  }
+
+  // One query for current enrolments, then a single upsert bulk write.
+  const studentIds = [...studentsByKey.values()].map((student) => student._id).filter(Boolean);
+  const courseIds = [...courseMap.values()].map((course) => course._id).filter(Boolean);
+  const existingEnrollments = await Enrollment.find({
+    courseId: { $in: courseIds },
+    studentId: { $in: studentIds },
+  })
+    .select("courseId studentId status")
+    .lean();
+  const enrollmentMap = new Map(
+    existingEnrollments.map((enrollment) => [
+      enrollmentKey(enrollment.courseId, enrollment.studentId),
+      { status: enrollment.status },
+    ]),
+  );
+
+  const enrolledAt = new Date();
+  const enrollmentOps = [];
+  for (const row of rows) {
+    const course = courseMap.get(row.courseCode);
+    const student = studentsByKey.get(studentKey(row.studentIdentifier));
+    if (!course?._id || !student?._id) continue;
+    const key = enrollmentKey(course._id, student._id);
+    const existing = enrollmentMap.get(key);
+    const op = {
+      updateOne: {
+        filter: { courseId: course._id, studentId: student._id },
+        update: { $set: { status: "active", enrolledAt } },
+        upsert: true,
+      },
+    };
+    if (!existing) {
       enrolmentsCreated += 1;
+      enrollmentMap.set(key, { status: "active" });
+      enrollmentOps.push(op);
     } else if (existing.status !== "active") {
-      existing.status = "active";
-      existing.enrolledAt = new Date();
-      await existing.save();
       enrolmentsReactivated += 1;
+      existing.status = "active";
+      enrollmentOps.push(op);
     } else {
       enrolmentsSkipped += 1;
     }
   }
+  for (const part of chunk(enrollmentOps)) {
+    await Enrollment.bulkWrite(part);
+  }
 
   previews.delete(importId);
+  invalidateDashboardCache(ownerKey);
 
   return {
     importId,
@@ -285,7 +417,7 @@ export async function confirmCourseRosterImport(lecturerId, importId) {
       enrolmentsCreated,
       enrolmentsReactivated,
       enrolmentsSkipped,
-      validRows: preview.validRows.length,
+      validRows: rows.length,
       invalidRows: preview.invalidRows.length,
     },
   };

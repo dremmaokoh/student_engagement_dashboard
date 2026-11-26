@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonBar,
+  SkeletonDonutChart,
+  SkeletonPanel,
+  SkeletonSummaryGrid,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
 import ClassificationCoverageCard from "../components/dashboard/ClassificationCoverageCard.jsx";
 import ClassificationTrendFilter from "../components/dashboard/ClassificationTrendFilter.jsx";
 import CourseComparison from "../components/dashboard/CourseComparison.jsx";
@@ -15,6 +21,7 @@ import { formatScore, INSUFFICIENT_DATA_HELP } from "../lib/classifications.js";
 import { ALL_CLASSIFICATIONS } from "../lib/classificationTrend.js";
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { formatLastRecordedActivity } from "../lib/formatLastActivity.js";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import {
   PERIOD_PRESETS,
   buildDashboardQueryParams,
@@ -102,6 +109,7 @@ export default function DashboardPage() {
   const dashboardQueryKey = dashboardParams.toString();
 
   const [courses, setCourses] = useState([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [comparison, setComparison] = useState(null);
   const [trend, setTrend] = useState(null);
@@ -124,6 +132,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setCoursesLoading(true);
     apiRequest("/api/v1/courses?limit=100")
       .then((result) => {
         if (!cancelled) {
@@ -133,6 +142,11 @@ export default function DashboardPage() {
       .catch(() => {
         if (!cancelled) {
           setCourses([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCoursesLoading(false);
         }
       });
     return () => {
@@ -145,41 +159,47 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true);
       setError("");
+      // The classification-runs lookup is independent of the three dashboard
+      // endpoints, so fire all four together instead of waiting for the first
+      // three to finish. It stays best-effort and cannot fail the dashboard.
+      const wantsRuns = courseId !== "all";
+      if (wantsRuns) {
+        setSingleCourseRunsLoading(true);
+      } else {
+        setSingleCourseRuns([]);
+        setSingleCourseRunsLoading(false);
+      }
+      const runsRequest = wantsRuns
+        ? apiRequest(`/api/v1/courses/${courseId}/classification-runs?scope=all`)
+            .then((result) => {
+              if (!cancelled) {
+                setSingleCourseRuns(result.data.items || []);
+              }
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setSingleCourseRuns([]);
+              }
+            })
+            .finally(() => {
+              if (!cancelled) {
+                setSingleCourseRunsLoading(false);
+              }
+            })
+        : Promise.resolve();
       try {
-        const requests = [
+        const [summaryResult, comparisonResult, trendResult] = await Promise.all([
           apiRequest(`/api/v1/dashboard/summary?${dashboardQueryKey}`),
           apiRequest(`/api/v1/dashboard/course-comparison?${dashboardQueryKey}`),
           apiRequest(`/api/v1/dashboard/trend?${dashboardQueryKey}`),
-        ];
-        if (courseId !== "all") {
-          setSingleCourseRunsLoading(true);
-        }
-        const [summaryResult, comparisonResult, trendResult] = await Promise.all(requests);
+          runsRequest,
+        ]);
         if (cancelled) {
           return;
         }
         setSummary(summaryResult.data);
         setComparison(comparisonResult.data);
         setTrend(trendResult.data);
-        if (courseId !== "all") {
-          try {
-            const runsResult = await apiRequest(`/api/v1/courses/${courseId}/classification-runs?scope=all`);
-            if (!cancelled) {
-              setSingleCourseRuns(runsResult.data.items || []);
-            }
-          } catch {
-            if (!cancelled) {
-              setSingleCourseRuns([]);
-            }
-          } finally {
-            if (!cancelled) {
-              setSingleCourseRunsLoading(false);
-            }
-          }
-        } else {
-          setSingleCourseRuns([]);
-          setSingleCourseRunsLoading(false);
-        }
       } catch (err) {
         if (!cancelled) {
           setError(err.message);
@@ -203,6 +223,7 @@ export default function DashboardPage() {
     let cancelled = false;
     async function loadTable() {
       setTableLoading(true);
+      setTableRows(null);
       try {
         const params = new URLSearchParams(dashboardParams);
         params.set("limit", String(TABLE_LIMIT));
@@ -348,6 +369,7 @@ export default function DashboardPage() {
               value={courseId}
               onChange={(event) => updateFilters({ courseId: event.target.value, tablePage: "1" })}
             >
+              {coursesLoading ? <option value={courseId}>Loading courses…</option> : null}
               <option value="all">All courses</option>
               {courses.map((course) => (
                 <option key={course.id} value={course.id}>
@@ -415,7 +437,9 @@ export default function DashboardPage() {
         </form>
         <div className="filter-applied" aria-live="polite">
           <span className="filter-applied-label">Applied:</span>
-          <span className="filter-chip">{selectedCourse ? selectedCourse.code : "All courses"}</span>
+          <span className="filter-chip">
+            {selectedCourse ? selectedCourse.code : coursesLoading ? "Loading course…" : "All courses"}
+          </span>
           <span className="filter-chip">{presetLabel(preset)}</span>
           {isLatestPeriodPreset(preset) ? (
             <span className="filter-chip">Latest classification per course</span>
@@ -433,7 +457,44 @@ export default function DashboardPage() {
         </p>
       ) : null}
 
-      <LoadingState loading={loading} variant="page" size="lg" message="Preparing your dashboard…" />
+      <ContentSkeleton loading={loading} label="Loading overview…">
+        <SkeletonSummaryGrid
+          className="dashboard-kpi-grid dashboard-kpi-seven dashboard-kpi-compact"
+          count={7}
+          wrapperClassName="summary-kpi-static"
+        />
+        <SkeletonPanel
+          className="card dashboard-panel classification-coverage-card"
+          titleWidth="38%"
+          showTitle
+          lines={["68%"]}
+        >
+          <dl className="classification-coverage-dl" aria-hidden="true">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index}>
+                <dt>
+                  <SkeletonBar width="72%" height={10} />
+                </dt>
+                <dd>
+                  <SkeletonBar width="48%" height={16} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </SkeletonPanel>
+        <SkeletonPanel className="card dashboard-panel distribution-hero-panel" showTitle={false}>
+          <SkeletonDonutChart />
+        </SkeletonPanel>
+        <SkeletonPanel className="card dashboard-panel followup-queue" titleWidth="38%" showTitle lines={["58%"]}>
+          <SkeletonTable
+            columns={skeletonColumns("dashboardQueue")}
+            rows={6}
+            tableClassName="attention-table"
+            wrapClassName="table-card table-card-flush"
+            showFooter
+          />
+        </SkeletonPanel>
+      </ContentSkeleton>
 
       {!loading && summary?.state === "no_courses" ? (
         <section className="card empty-state">
@@ -597,12 +658,6 @@ export default function DashboardPage() {
                     Clear table filters
                   </button>
                 ) : null}
-                <LoadingState
-                  loading={tableLoading}
-                  variant="inline"
-                  size="sm"
-                  message="Refreshing engagement table…"
-                />
               </form>
             ) : null}
 
@@ -620,7 +675,18 @@ export default function DashboardPage() {
                 No classification run for this monitoring period yet. Open a course, import activity if needed, then
                 generate classifications.
               </p>
-            ) : items.length === 0 && !tableLoading ? (
+            ) : tableLoading || tableRows === null ? (
+              <ContentSkeleton
+                loading
+                variant="table"
+                columns={skeletonColumns("dashboardQueue")}
+                rows={6}
+                tableClassName="attention-table"
+                wrapClassName="table-card table-card-flush"
+                showFooter
+                label="Refreshing engagement table…"
+              />
+            ) : items.length === 0 ? (
               appliedTableSearch ? (
                 <p className="followup-empty-compact">
                   <strong>No matching students</strong> — No enrolments match &ldquo;{appliedTableSearch}&rdquo; for the
@@ -647,7 +713,7 @@ export default function DashboardPage() {
               )
             ) : (
               <>
-                <div className={`table-card table-card-flush ${tableLoading ? "is-refreshing" : ""}`}>
+                <div className="table-card table-card-flush">
                   <table className="data-table attention-table">
                     <thead>
                       <tr>

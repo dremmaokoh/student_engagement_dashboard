@@ -11,8 +11,14 @@ export function normalizePeriodDate(raw) {
     return new Date(Date.UTC(raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate()));
   }
   const text = String(raw).trim();
-  const isoDay = /^\d{4}-\d{2}-\d{2}$/.test(text);
-  const parsed = new Date(isoDay ? `${text}T00:00:00.000Z` : text);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const parsedDay = new Date(`${text}T00:00:00.000Z`);
+    if (Number.isNaN(parsedDay.getTime()) || parsedDay.toISOString().slice(0, 10) !== text) {
+      return null;
+    }
+    return parsedDay;
+  }
+  const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }

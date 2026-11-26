@@ -236,6 +236,44 @@ Recorded 17 November 2026.
 
 Chapter Four evidence checklist and recorded automated outcomes: [docs/CHAPTER_FOUR_EVIDENCE.md](docs/CHAPTER_FOUR_EVIDENCE.md). Screenshots remain a manual capture step (do not invent outcomes).
 
+## Performance and operations
+
+**Measured before/after (25 November 2026, shared Atlas database, 12 courses and 600 classified enrolments):**
+
+| Operation | Before | After | Notes |
+| --- | ---: | ---: | --- |
+| `GET /api/v1/courses?limit=100` | 9.14 s | 0.96 s | 3 batched aggregates + lean reads |
+| Dashboard summary (cold / warm) | 10.02 / 9.98 s | 4.23 / 0.75 s | 30 s cache, shared in-flight work |
+| Dashboard course comparison (cold / warm) | 9.18 / 9.09 s | 0.27 / 0.25 s | Reuses the cached scoped bundle |
+| Dashboard trend (cold / warm) | 3.52 / 3.38 s | 1.01 / 0.24 s | Per-course aggregations run in parallel |
+| Roster import confirm, 500 rows | 377.8 s | 3.34 s | Batched lookups, 500-row chunked writes |
+| Roster import confirm, 1,000 rows | >15 min (timed out) | 3.85 s | Baseline run hit the harness timeout |
+| Roster import confirm, 5,000 rows | not run (baseline too slow) | 17.63 s | Under the 20 s chunked-write budget |
+| Course-student import confirm, 500 / 1,000 / 5,000 rows | 2.45 s (500 only) | 2.16 / 2.77 / 9.65 s | Chunked inserts and bulk writes |
+| Activity import confirm, 500 rows | 249.3 s | 2.30 s | Duplicate keys now skip rows instead of failing |
+| Activity import confirm, 1,000 / 5,000 rows | not run (baseline too slow) | 3.24 / 10.85 s | Period dates now persist on the batch |
+| 5,001-row CSV preview | accepted (201) | rejected (400) | `This file has 5001 rows. The maximum is 5,000 per upload. Please split the file.` |
+
+Import confirms use one batched lookup followed by writes in chunks of 500. Because the largest measured confirm was 17.63 s, the app keeps the synchronous `200` response contract instead of switching to `202` plus polling.
+
+**CSV limits**
+
+- Upload body limit is 5 MB.
+- Each upload accepts at most 5,000 data rows (the header is not counted).
+- Import previews expire after 30 minutes. An expired or re-uploaded preview returns `Preview expired, please upload the file again.`
+- Each lecturer can hold at most 10 unconfirmed previews; the oldest are removed first.
+
+**Indexes and hosting**
+
+- Production starts with Mongoose `autoIndex=false`. After deploying a new index definition, run `cd server && npm run sync:indexes` once (with `MONGODB_URI` set) to build the indexes explicitly.
+- Responses are gzip/br compressed. Built client assets are cached for one year as immutable; `index.html` is never cached.
+- Requests taking 300 ms or more are logged as `slow_request` JSON so cold starts and slow queries are visible in the host logs.
+- The API uses a MongoDB connection pool of 10.
+
+**Cold starts on Render**
+
+Free Render web services sleep after roughly 15 minutes of inactivity. The first request after sleep can take up to a minute. To reduce cold starts, point an external cron/uptime pinger at `GET /health` every 5–10 minutes, or keep the service on a paid plan. Do not ping more frequently than that.
+
 ## Limitations (prototype)
 
 - No live Moodle/Canvas/LMS API. Activity arrives through CSV only.

@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonChart } from "../common/ContentSkeleton.jsx";
 import { formatRunTitle } from "../../lib/classificationRuns.js";
 import {
   ALL_CLASSIFICATIONS,
@@ -182,7 +182,11 @@ export default function GeneralOverviewTrendChart({
   const scope = Number(trend?.coursesInScope ?? coursesInScope ?? 0) || 0;
 
   if (loading) {
-    return <LoadingState loading variant="inline" message="Preparing engagement analytics…" />;
+    return (
+      <ContentSkeleton loading label="Preparing engagement analytics…">
+        <SkeletonChart seriesCount={visibleTrendSeries(classificationFilter).length} showSnapshot />
+      </ContentSkeleton>
+    );
   }
 
   if (points.length === 0) {

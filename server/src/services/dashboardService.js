@@ -3,6 +3,7 @@ import ClassificationResult from "../models/ClassificationResult.js";
 import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
 import ImportBatch from "../models/ImportBatch.js";
+import { withDashboardCache } from "../utils/dashboardCache.js";
 import { HttpError } from "../utils/httpError.js";
 import { parsePagination, paginated } from "../utils/pagination.js";
 import { toPublicCourse, toPublicStudent } from "../utils/toPublic.js";
@@ -50,7 +51,7 @@ async function lecturerCourses(lecturerId, courseId) {
     }
     filter._id = courseId;
   }
-  const courses = await Course.find(filter).sort({ code: 1 });
+  const courses = await Course.find(filter).sort({ code: 1 }).lean();
   if (courseId && courseId !== "all" && courses.length === 0) {
     throw new HttpError(404, "Course was not found.");
   }
@@ -87,20 +88,28 @@ async function latestRunForCourse(courseId, period) {
     ...periodFilter(period.monitoringPeriodStart, period.monitoringPeriodEnd),
   })
     .sort({ generatedAt: -1 })
-    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName");
+    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName")
+    .lean();
 }
 
 async function latestRunForCourseOverall(courseId) {
   return ClassificationResult.findOne({ courseId })
     .sort({ generatedAt: -1 })
-    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName");
+    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName")
+    .lean();
 }
 
 async function resultsForCourseRun(courseId, run) {
   if (!run) {
     return [];
   }
-  return ClassificationResult.find({ courseId, runId: run.runId }).populate("studentId");
+  // Only the fields used by the dashboard builders are loaded, as lean objects.
+  return ClassificationResult.find({ courseId, runId: run.runId })
+    .select(
+      "classification displayScore overallScore activitySnapshot.lastActivityAt generatedAt runId studentId",
+    )
+    .populate("studentId", "fullName matriculationNumber email createdAt updatedAt")
+    .lean();
 }
 
 async function enrolledCount(courseId) {
@@ -112,25 +121,28 @@ async function latestImportForCourse(courseId, period) {
     courseId,
     status: "confirmed",
     ...periodFilter(period.monitoringPeriodStart, period.monitoringPeriodEnd),
-  }).sort({ confirmedAt: -1, createdAt: -1 });
+  })
+    .sort({ confirmedAt: -1, createdAt: -1 })
+    .select("filename importedCount skippedCount rejectedCount confirmedAt createdAt")
+    .lean();
 }
 
 async function latestImportForCourseOverall(courseId) {
-  return ImportBatch.findOne({ courseId, status: "confirmed" }).sort({
-    confirmedAt: -1,
-    createdAt: -1,
-  });
+  return ImportBatch.findOne({ courseId, status: "confirmed" })
+    .sort({ confirmedAt: -1, createdAt: -1 })
+    .select("filename importedCount skippedCount rejectedCount confirmedAt createdAt")
+    .lean();
 }
 
 async function enrolledUniqueStudentCount(courseIds) {
   if (!courseIds.length) {
     return 0;
   }
-  const enrollments = await Enrollment.find({
-    courseId: { $in: courseIds },
-    status: "active",
-  }).select("studentId");
-  return new Set(enrollments.map((row) => String(row.studentId))).size;
+  const rows = await Enrollment.aggregate([
+    { $match: { courseId: { $in: courseIds }, status: "active" } },
+    { $group: { _id: "$studentId" } },
+  ]);
+  return rows.length;
 }
 
 function periodsOverlap(periodStart, periodEnd, rangeStart, rangeEnd) {
@@ -195,39 +207,46 @@ function runRowToCounts(row) {
   };
 }
 
-async function collectScopedData(lecturerId, query) {
+async function collectScopedDataUncached(lecturerId, query) {
   const { mode: periodScope, period } = resolveDashboardScope(query || {});
   const courseFilter = String(query.courseId || "all");
   const courses = await lecturerCourses(lecturerId, courseFilter);
-  const courseBundles = [];
 
-  for (const course of courses) {
-    const runPromise =
-      periodScope === "latest"
-        ? latestRunForCourseOverall(course._id)
-        : latestRunForCourse(course._id, period);
-    const importPromise =
-      periodScope === "latest"
-        ? latestImportForCourseOverall(course._id)
-        : latestImportForCourse(course._id, period);
-    const [run, enrolled, latestImport] = await Promise.all([
-      runPromise,
-      enrolledCount(course._id),
-      importPromise,
-    ]);
-    const results = await resultsForCourseRun(course._id, run);
-    courseBundles.push({
-      course,
-      run,
-      enrolled,
-      results,
-      latestImport,
-      counts: countResults(results),
-      hasClassification: Boolean(run),
-    });
-  }
+  // All courses are processed in parallel; the three dashboard endpoints then
+  // share the result through the short-lived cache below.
+  const courseBundles = await Promise.all(
+    courses.map(async (course) => {
+      const runPromise =
+        periodScope === "latest"
+          ? latestRunForCourseOverall(course._id)
+          : latestRunForCourse(course._id, period);
+      const importPromise =
+        periodScope === "latest"
+          ? latestImportForCourseOverall(course._id)
+          : latestImportForCourse(course._id, period);
+      const [run, enrolled, latestImport] = await Promise.all([
+        runPromise,
+        enrolledCount(course._id),
+        importPromise,
+      ]);
+      const results = await resultsForCourseRun(course._id, run);
+      return {
+        course,
+        run,
+        enrolled,
+        results,
+        latestImport,
+        counts: countResults(results),
+        hasClassification: Boolean(run),
+      };
+    }),
+  );
 
   return { periodScope, period, courseFilter, courses, courseBundles };
+}
+
+function collectScopedData(lecturerId, query) {
+  return withDashboardCache(lecturerId, query, () => collectScopedDataUncached(lecturerId, query));
 }
 
 export async function getDashboardSummary(lecturerId, query) {
@@ -385,15 +404,24 @@ const CLASSIFICATION_RANK = {
 const CLASSIFICATION_VALUES = Object.keys(CLASSIFICATION_RANK);
 
 export async function getDashboardTrend(lecturerId, query) {
+  return withDashboardCache(lecturerId, { ...query, _kind: "trend" }, () =>
+    buildDashboardTrend(lecturerId, query),
+  );
+}
+
+async function buildDashboardTrend(lecturerId, query) {
   const { mode: periodScope, period } = resolveDashboardScope(query || {});
   const courseFilter = String(query.courseId || "all");
   const courses = await lecturerCourses(lecturerId, courseFilter);
   const coursesInScope = courses.length;
 
+  const runRowsByCourse = await Promise.all(
+    courses.map(async (course) => ({ course, runRows: await aggregateRunRowsForCourse(course._id) })),
+  );
+
   const buckets = new Map();
 
-  for (const course of courses) {
-    const runRows = await aggregateRunRowsForCourse(course._id);
+  for (const { course, runRows } of runRowsByCourse) {
     const perPeriod = latestRunPerMonitoringPeriod(runRows);
     for (const [, row] of perPeriod) {
       if (

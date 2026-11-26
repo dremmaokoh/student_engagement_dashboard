@@ -1,6 +1,7 @@
 import { useState } from "react";
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton from "../common/ContentSkeleton.jsx";
 import ViewStudentMessageModal from "./ViewStudentMessageModal.jsx";
+import { skeletonColumns } from "../../lib/skeletonColumns.js";
 
 function statusLabel(status) {
   if (status === "sent") {
@@ -40,7 +41,15 @@ export default function StudentCommunicationSection({ communications, loading, o
           Send message
         </button>
       </div>
-      <LoadingState loading={loading} variant="inline" message="Loading message history…" />
+      <ContentSkeleton
+        loading={loading}
+        variant="table"
+        columns={skeletonColumns("messages")}
+        rows={3}
+        tableClassName="student-communication-table"
+        wrapClassName="table-card table-card-flush student-communication-table-wrap"
+        label="Loading message history…"
+      />
       {!loading && communications?.length ? (
         <div className="table-card table-card-flush student-communication-table-wrap">
           <table className="data-table student-communication-table">
@@ -76,9 +85,9 @@ export default function StudentCommunicationSection({ communications, loading, o
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : !loading ? (
         <p className="muted">No messages sent to this student yet.</p>
-      )}
+      ) : null}
       <ViewStudentMessageModal open={Boolean(viewing)} message={viewing} onClose={() => setViewing(null)} />
     </section>
   );

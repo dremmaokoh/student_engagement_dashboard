@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import { SkeletonProfile } from "../components/common/ContentSkeleton.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import SendStudentMessageModal from "../components/students/SendStudentMessageModal.jsx";
@@ -52,7 +52,7 @@ export default function StudentDetailPage() {
   const [error, setError] = useState("");
   const [expandedCourseId, setExpandedCourseId] = useState(null);
   const [communications, setCommunications] = useState([]);
-  const [communicationsLoading, setCommunicationsLoading] = useState(false);
+  const [communicationsLoading, setCommunicationsLoading] = useState(true);
   const [composerOpen, setComposerOpen] = useState(false);
 
   const loadCommunications = useCallback(async () => {
@@ -113,7 +113,7 @@ export default function StudentDetailPage() {
   if (loading) {
     return (
       <main className="content student-detail-page">
-        <ContentSkeleton loading variant="lines" rows={4} label="Loading student profile…" />
+        <SkeletonProfile />
       </main>
     );
   }

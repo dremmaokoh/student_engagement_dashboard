@@ -48,7 +48,11 @@ export default function ViewStudentMessageModal({ open, message, onClose }) {
   }
 
   return (
-    <dialog ref={dialogRef} className="student-modal student-view-message-modal" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="student-modal student-modal--default student-view-message-modal"
+      onClose={onClose}
+    >
       <div className="student-modal-form">
         <header className="student-modal-header">
           <h2>Message details</h2>

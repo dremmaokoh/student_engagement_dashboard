@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import path from "node:path";
@@ -6,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { env, isProduction } from "./config/env.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { ensureDatabaseConnectionMiddleware } from "./middleware/ensureDatabaseConnection.js";
+import { requestTiming } from "./middleware/requestTiming.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import authRouter from "./routes/auth.js";
 import coursesRouter from "./routes/courses.js";
@@ -19,12 +21,14 @@ export function createApp() {
   const app = express();
 
   app.disable("x-powered-by");
+  app.use(requestTiming);
   app.use(helmet());
   app.use(
     cors({
       origin: env.clientOrigin,
     }),
   );
+  app.use(compression());
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/health", healthRouter);
@@ -43,14 +47,24 @@ export function createApp() {
   if (isProduction()) {
     const serverSrcDir = path.dirname(fileURLToPath(import.meta.url));
     const clientDist = path.join(path.resolve(serverSrcDir, "../.."), "client", "dist");
-    app.use(express.static(clientDist, { index: false }));
-    app.get(/^(?!\/api\/|\/health).*/, (_req, res, next) => {
+    const sendIndex = (_req, res, next) => {
+      res.set("Cache-Control", "no-cache");
       res.sendFile(path.join(clientDist, "index.html"), (err) => {
         if (err) {
           next(err);
         }
       });
-    });
+    };
+
+    app.get("/index.html", sendIndex);
+    app.use(
+      express.static(clientDist, {
+        index: false,
+        maxAge: "1y",
+        immutable: true,
+      }),
+    );
+    app.get(/^(?!\/api\/|\/health).*/, sendIndex);
   }
 
   app.use(errorHandler);

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useApiAction } from "../../hooks/useApiAction.js";
 import { downloadAuthenticated } from "../../services/api.js";
 
 function isValidRange(start, end) {
@@ -17,6 +18,7 @@ export default function CourseTemplateDownloadModal({
   initialPeriodEnd,
   onPeriodConfirmed,
 }) {
+  const run = useApiAction();
   const dialogRef = useRef(null);
   const [periodStart, setPeriodStart] = useState(initialPeriodStart);
   const [periodEnd, setPeriodEnd] = useState(initialPeriodEnd);
@@ -56,9 +58,13 @@ export default function CourseTemplateDownloadModal({
     setError("");
     try {
       const params = new URLSearchParams({ periodStart, periodEnd });
-      await downloadAuthenticated(
-        `/api/v1/courses/${courseId}/imports/template?${params.toString()}`,
-        `${courseCode || "course"}-activity-import-template.csv`,
+      await run(
+        () =>
+          downloadAuthenticated(
+            `/api/v1/courses/${courseId}/imports/template?${params.toString()}`,
+            `${courseCode || "course"}-activity-import-template.csv`,
+          ),
+        { success: "Activity template downloaded.", rethrow: true },
       );
       onPeriodConfirmed?.({ periodStart, periodEnd });
       onClose?.();
@@ -70,7 +76,11 @@ export default function CourseTemplateDownloadModal({
   }
 
   return (
-    <dialog ref={dialogRef} className="student-modal course-workspace-modal" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="student-modal student-modal--default course-workspace-modal"
+      onClose={onClose}
+    >
       <form className="student-modal-form course-workspace-modal-body" onSubmit={onDownload}>
         <header className="student-modal-header">
           <h2>Prepare Activity Template</h2>

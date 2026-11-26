@@ -29,7 +29,7 @@ export default function AddStudentModal({
   }, [open]);
 
   return (
-    <dialog ref={dialogRef} className="student-modal" onClose={onClose}>
+    <dialog ref={dialogRef} className="student-modal student-modal--small" onClose={onClose}>
       <form className="student-modal-form" onSubmit={onSubmit}>
         <header className="student-modal-header">
           <h2>Add student</h2>

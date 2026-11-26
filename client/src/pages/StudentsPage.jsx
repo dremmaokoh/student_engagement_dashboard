@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import AddStudentModal from "../components/students/AddStudentModal.jsx";
 import StudentCourseBadges from "../components/students/StudentCourseBadges.jsx";
 import StudentAvatar from "../components/students/StudentAvatar.jsx";
@@ -8,15 +9,18 @@ import StudentParticipationCell from "../components/students/StudentParticipatio
 import { studentDetailPath } from "../lib/studentDirectory.js";
 import { returnNavigationState } from "../lib/returnNavigation.js";
 import { serialNumber } from "../lib/serialNumber.js";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 export default function StudentsPage() {
   const location = useLocation();
+  const run = useApiAction();
   const [searchParams, setSearchParams] = useSearchParams();
   const [directory, setDirectory] = useState({ items: [], total: 0, page: 1, limit: 25, totalPages: 1 });
   const [courses, setCourses] = useState([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
   const [error, setError] = useState("");
   const [directoryError, setDirectoryError] = useState("");
   const [success, setSuccess] = useState("");
@@ -58,17 +62,21 @@ export default function StudentsPage() {
   }
 
   async function loadCourses() {
+    setCoursesLoading(true);
     try {
       const result = await apiRequest("/api/v1/courses?limit=100");
       setCourses(result.data.items);
     } catch {
       setCourses([]);
+    } finally {
+      setCoursesLoading(false);
     }
   }
 
   async function loadDirectory() {
     setLoading(true);
     setDirectoryError("");
+    setDirectory((current) => ({ ...current, items: [] }));
     try {
       const params = new URLSearchParams({
         page: String(page),
@@ -119,18 +127,26 @@ export default function StudentsPage() {
     setError("");
     setSuccess("");
     try {
-      const created = await apiRequest("/api/v1/students", {
-        method: "POST",
-        body: {
-          fullName: form.fullName,
-          matriculationNumber: form.matriculationNumber,
-          email: form.email || undefined,
+      await run(
+        async () => {
+          const created = await apiRequest("/api/v1/students", {
+            method: "POST",
+            body: {
+              fullName: form.fullName,
+              matriculationNumber: form.matriculationNumber,
+              email: form.email || undefined,
+            },
+          });
+          await apiRequest(`/api/v1/courses/${form.courseId}/enrollments`, {
+            method: "POST",
+            body: { studentId: created.data.student.id },
+          });
         },
-      });
-      await apiRequest(`/api/v1/courses/${form.courseId}/enrollments`, {
-        method: "POST",
-        body: { studentId: created.data.student.id },
-      });
+        {
+          success: "Student created and enrolled successfully.",
+          rethrow: true,
+        },
+      );
       setForm({ fullName: "", matriculationNumber: "", email: "", courseId: "" });
       setModalOpen(false);
       setSuccess("Student created and enrolled successfully.");
@@ -151,10 +167,10 @@ export default function StudentsPage() {
   const pageEnd =
     directory.total === 0 ? 0 : Math.min((directory.page - 1) * directory.limit + directory.items.length, directory.total);
 
-  const emptyCourses = courses.length === 0;
+  const emptyCourses = !coursesLoading && courses.length === 0;
 
   const emptyMessage = useMemo(() => {
-    if (loading) {
+    if (loading || coursesLoading) {
       return null;
     }
     if (emptyCourses) {
@@ -167,7 +183,7 @@ export default function StudentsPage() {
       return "no-results";
     }
     return null;
-  }, [loading, emptyCourses, directory.total, hasFilters]);
+  }, [loading, coursesLoading, emptyCourses, directory.total, hasFilters]);
 
   return (
     <main className="content students-page">
@@ -274,7 +290,7 @@ export default function StudentsPage() {
           ) : null}
         </form>
 
-        {directoryError ? (
+        {!loading && directoryError ? (
           <div className="students-error-banner" role="alert">
             <p className="form-error">{directoryError}</p>
             <button type="button" className="secondary-btn" onClick={loadDirectory}>
@@ -286,8 +302,11 @@ export default function StudentsPage() {
         <ContentSkeleton
           loading={loading}
           variant="table"
+          columns={skeletonColumns("students")}
           rows={6}
-          columns={7}
+          tableClassName="students-directory-table"
+          wrapClassName="table-card students-table-wrap"
+          showFooter
           label="Loading student records…"
         />
 

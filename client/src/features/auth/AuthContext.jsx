@@ -1,9 +1,14 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useToast } from "../../components/common/ToastProvider.jsx";
+import { useApiAction } from "../../hooks/useApiAction.js";
 import { apiRequest, getStoredToken, storeToken } from "../../services/api.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const toast = useToast();
+  const run = useApiAction();
+  const sessionExpiredNoticeShown = useRef(false);
   const [token, setToken] = useState(() => getStoredToken());
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(Boolean(getStoredToken()));
@@ -41,6 +46,10 @@ export function AuthProvider({ children }) {
       } catch {
         storeToken(null);
         if (!cancelled) {
+          if (!sessionExpiredNoticeShown.current) {
+            sessionExpiredNoticeShown.current = true;
+            toast.info("Your session has expired. Please sign in again.");
+          }
           setUser(null);
           setToken(null);
         }
@@ -59,10 +68,18 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => {
     async function login(email, password) {
-      const result = await apiRequest("/api/v1/auth/login", {
-        method: "POST",
-        body: { email, password },
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest("/api/v1/auth/login", {
+            method: "POST",
+            body: { email, password },
+          }),
+        {
+          success: "Signed in successfully.",
+          error: (err) => err.message,
+          rethrow: true,
+        },
+      );
       storeToken(result.data.token);
       setToken(result.data.token);
       setUser(result.data.user);
@@ -70,10 +87,18 @@ export function AuthProvider({ children }) {
     }
 
     async function register(fullName, email, password) {
-      const result = await apiRequest("/api/v1/auth/register", {
-        method: "POST",
-        body: { fullName, email, password },
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest("/api/v1/auth/register", {
+            method: "POST",
+            body: { fullName, email, password },
+          }),
+        {
+          success: "Account created. Welcome aboard!",
+          error: (err) => err.message,
+          rethrow: true,
+        },
+      );
       storeToken(result.data.token);
       setToken(result.data.token);
       setUser(result.data.user);
@@ -96,7 +121,7 @@ export function AuthProvider({ children }) {
       register,
       logout,
     };
-  }, [token, user, loading, registrationEnabled]);
+  }, [token, user, loading, registrationEnabled, run]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

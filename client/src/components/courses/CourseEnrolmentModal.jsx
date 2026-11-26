@@ -6,6 +6,7 @@ import {
   setStudentsSelected,
   toggleStudentSelection,
 } from "../../lib/courseEnrolment.js";
+import { useApiAction } from "../../hooks/useApiAction.js";
 import { apiRequest, downloadAuthenticated } from "../../services/api.js";
 
 const STUDENT_PAGE_SIZE = 50;
@@ -32,6 +33,7 @@ async function fetchAllPages(basePath) {
 }
 
 export default function CourseEnrolmentModal({ open, onClose, courseId, courseCode, onEnrolled }) {
+  const run = useApiAction();
   const dialogRef = useRef(null);
   const selectAllRef = useRef(null);
   const [mode, setMode] = useState("existing");
@@ -142,10 +144,22 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     setError("");
     try {
       // One bulk request instead of one request per selected student.
-      const result = await apiRequest(`/api/v1/courses/${courseId}/enrollments/bulk`, {
-        method: "POST",
-        body: { studentIds },
-      });
+      const response = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/enrollments/bulk`, {
+            method: "POST",
+            body: { studentIds },
+          }),
+        {
+          loading: "Enrolling students…",
+          success: (result) => {
+            const enrolled = result?.data?.enrolled ?? 0;
+            return `${enrolled} student${enrolled === 1 ? "" : "s"} enrolled in ${courseCode || "the course"}.`;
+          },
+          rethrow: true,
+        },
+      );
+      const result = response.data;
       onEnrolled?.(result.data.enrolled, 0);
       setSelectedIds(new Set());
       onClose?.();
@@ -161,18 +175,27 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     setSaving(true);
     setError("");
     try {
-      const created = await apiRequest("/api/v1/students", {
-        method: "POST",
-        body: {
-          fullName: newName,
-          matriculationNumber: newMatric,
-          ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
+      await run(
+        async () => {
+          const created = await apiRequest("/api/v1/students", {
+            method: "POST",
+            body: {
+              fullName: newName,
+              matriculationNumber: newMatric,
+              ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
+            },
+          });
+          await apiRequest(`/api/v1/courses/${courseId}/enrollments`, {
+            method: "POST",
+            body: { studentId: created.data.student.id },
+          });
         },
-      });
-      await apiRequest(`/api/v1/courses/${courseId}/enrollments`, {
-        method: "POST",
-        body: { studentId: created.data.student.id },
-      });
+        {
+          loading: "Creating and enrolling student…",
+          success: () => `${newName.trim()} created and enrolled in ${courseCode || "the course"}.`,
+          rethrow: true,
+        },
+      );
       onEnrolled?.(1, 0);
       onClose?.();
     } catch (err) {
@@ -186,9 +209,9 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     setError("");
     try {
       const safeCode = String(courseCode || "course").replace(/[^\w.-]+/g, "_");
-      await downloadAuthenticated(
-        `/api/v1/courses/${courseId}/students/template`,
-        `${safeCode}-students-template.csv`,
+      await run(
+        () => downloadAuthenticated(`/api/v1/courses/${courseId}/students/template`, `${safeCode}-students-template.csv`),
+        { success: "Student template downloaded.", rethrow: true },
       );
     } catch (err) {
       setError(err.message);
@@ -207,11 +230,15 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const result = await apiRequest(`/api/v1/courses/${courseId}/students/import/preview`, {
-        method: "POST",
-        body: formData,
-      });
-      setImportPreview(result.data);
+      const response = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/students/import/preview`, {
+            method: "POST",
+            body: formData,
+          }),
+        { rethrow: true },
+      );
+      setImportPreview(response.data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -226,10 +253,22 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     setImporting(true);
     setError("");
     try {
-      const result = await apiRequest(`/api/v1/courses/${courseId}/students/import/confirm`, {
-        method: "POST",
-        body: { importId: importPreview.importId },
-      });
+      const response = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/students/import/confirm`, {
+            method: "POST",
+            body: { importId: importPreview.importId },
+          }),
+        {
+          loading: "Importing…",
+          success: (result) => {
+            const created = result?.data?.counts?.studentsCreated ?? 0;
+            return `${created} student${created === 1 ? "" : "s"} created and enrolled in ${courseCode || "the course"}.`;
+          },
+          rethrow: true,
+        },
+      );
+      const result = response.data;
       setImportPreview(null);
       onEnrolled?.(result.data.counts.studentsCreated, 0);
       onClose?.();
@@ -254,7 +293,7 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
   return (
     <dialog
       ref={dialogRef}
-      className="student-modal course-workspace-modal course-enrolment-modal"
+      className="student-modal student-modal--large course-workspace-modal course-enrolment-modal"
       onClose={onClose}
     >
       <div className="student-modal-form course-workspace-modal-body">

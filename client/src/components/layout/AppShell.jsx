@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { useToast } from "../common/ToastProvider.jsx";
 import { useAuth } from "../../features/auth/AuthContext.jsx";
 
 const links = [
@@ -48,12 +49,18 @@ function initialsFrom(name) {
 
 export default function AppShell() {
   const { user, logout } = useAuth();
+  const toast = useToast();
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const userInitials = initialsFrom(user?.fullName);
 
   function closeNav() {
     setNavOpen(false);
+  }
+
+  function handleSignOut() {
+    logout();
+    toast.success("Signed out.");
   }
 
   return (
@@ -119,7 +126,7 @@ export default function AppShell() {
           <button
             type="button"
             className="secondary-btn sidebar-signout"
-            onClick={logout}
+            onClick={handleSignOut}
             title={collapsed ? "Sign out" : undefined}
           >
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">

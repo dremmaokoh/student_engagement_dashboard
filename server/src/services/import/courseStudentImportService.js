@@ -2,7 +2,10 @@ import { parse } from "csv-parse/sync";
 import Course from "../../models/Course.js";
 import Enrollment from "../../models/Enrollment.js";
 import Student from "../../models/Student.js";
+import { assertCsvRowLimit, chunk } from "../../utils/csvLimits.js";
+import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
+import { createPreviewStore } from "../../utils/previewStore.js";
 import { toPublicCourse, toPublicStudent } from "../../utils/toPublic.js";
 import { normalizeStudentEmail } from "../../validators/studentCommunicationValidators.js";
 
@@ -15,7 +18,7 @@ const COLUMN_ALIASES = {
   studentEmail: ["studentemail", "email", "mail"],
 };
 
-const previews = new Map();
+const previews = createPreviewStore();
 
 function normalizeHeader(key) {
   return String(key || "")
@@ -53,6 +56,7 @@ function parseRows(buffer) {
   if (!records.length) {
     throw new HttpError(400, "The CSV has no data rows.");
   }
+  assertCsvRowLimit(records);
 
   const headers = Object.keys(records[0] || {}).map(normalizeHeader);
   for (const required of COURSE_STUDENT_REQUIRED_COLUMNS) {
@@ -174,7 +178,7 @@ export async function previewCourseStudentImport(lecturerId, courseId, buffer, f
     validRows,
     invalidRows,
   };
-  previews.set(importId, preview);
+  previews.set(importId, String(lecturerId), preview);
 
   return {
     importId,
@@ -192,9 +196,9 @@ export async function previewCourseStudentImport(lecturerId, courseId, buffer, f
 }
 
 export async function confirmCourseStudentImport(lecturerId, courseId, importId) {
-  const preview = previews.get(importId);
-  if (!preview || preview.lecturerId !== String(lecturerId) || preview.courseId !== String(courseId)) {
-    throw new HttpError(404, "Student import preview was not found or has expired.");
+  const preview = previews.get(importId, String(lecturerId));
+  if (!preview || preview.courseId !== String(courseId)) {
+    throw new HttpError(404, "Preview expired, please upload the file again.");
   }
   previews.delete(importId);
 
@@ -206,7 +210,7 @@ export async function confirmCourseStudentImport(lecturerId, courseId, importId)
     _id: courseId,
     lecturerId,
     status: { $ne: "deleted" },
-  });
+  }).lean();
   if (!course) {
     throw new HttpError(404, "Course not found.");
   }
@@ -235,17 +239,19 @@ export async function confirmCourseStudentImport(lecturerId, courseId, importId)
 
   let createdStudents = [];
   try {
-    // Two bulk writes instead of two writes per row (about 1,000 round trips for 499 students).
-    createdStudents = await Student.insertMany(studentDocs, { ordered: false });
-    await Enrollment.insertMany(
-      createdStudents.map((student) => ({
-        studentId: student._id,
-        courseId: course._id,
-        status: "active",
-        enrolledAt: new Date(),
-      })),
-      { ordered: false },
-    );
+    // Chunked bulk writes instead of two writes per row (about 2,000 round trips for 1,000 students).
+    for (const part of chunk(studentDocs)) {
+      createdStudents = createdStudents.concat(await Student.insertMany(part, { ordered: false }));
+    }
+    const enrollmentDocs = createdStudents.map((student) => ({
+      studentId: student._id,
+      courseId: course._id,
+      status: "active",
+      enrolledAt: new Date(),
+    }));
+    for (const part of chunk(enrollmentDocs)) {
+      await Enrollment.insertMany(part, { ordered: false });
+    }
   } catch (err) {
     if (createdStudents.length) {
       await Enrollment.deleteMany({
@@ -258,6 +264,7 @@ export async function confirmCourseStudentImport(lecturerId, courseId, importId)
   }
 
   const students = createdStudents.map(toPublicStudent);
+  invalidateDashboardCache(lecturerId);
 
   return {
     importId,

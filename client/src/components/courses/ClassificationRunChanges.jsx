@@ -1,13 +1,16 @@
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonPanel } from "../common/ContentSkeleton.jsx";
 import { buildChangesSincePreviousCopy } from "../../lib/classificationRuns.js";
 
 export default function ClassificationRunChanges({ latestRun, previousRun, loading }) {
   if (loading) {
     return (
-      <section className="card course-overview-section course-overview-changes" aria-labelledby="changes-heading">
-        <h2 id="changes-heading">Changes since previous classification</h2>
-        <LoadingState loading variant="inline" message="Preparing run comparison…" />
-      </section>
+      <ContentSkeleton loading label="Preparing run comparison…">
+        <SkeletonPanel
+          className="card course-overview-section course-overview-changes"
+          titleWidth="46%"
+          lines={["72%", "64%", "58%"]}
+        />
+      </ContentSkeleton>
     );
   }
 

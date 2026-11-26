@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import LoadingState from "../common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonChart } from "../common/ContentSkeleton.jsx";
 import { formatRunTitle, runPeriodLabel } from "../../lib/classificationRuns.js";
 import {
   ALL_CLASSIFICATIONS,
@@ -165,7 +165,9 @@ export default function ClassificationTrendChart({
 
   if (loading) {
     return (
-      <LoadingState loading variant="inline" message="Preparing classification history…" />
+      <ContentSkeleton loading label="Preparing classification history…">
+        <SkeletonChart seriesCount={visibleTrendSeries(classificationFilter).length} showSnapshot />
+      </ContentSkeleton>
     );
   }
 

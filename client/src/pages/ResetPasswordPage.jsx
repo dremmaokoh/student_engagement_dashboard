@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import PasswordField from "../components/design/PasswordField.jsx";
 import AuthLayout from "../components/layout/AuthLayout.jsx";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 const pageCopy = {
@@ -11,6 +12,7 @@ const pageCopy = {
 };
 
 export default function ResetPasswordPage() {
+  const run = useApiAction();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
@@ -32,10 +34,18 @@ export default function ResetPasswordPage() {
     }
     setSubmitting(true);
     try {
-      await apiRequest("/api/v1/auth/reset-password", {
-        method: "POST",
-        body: { token, password },
-      });
+      await run(
+        () =>
+          apiRequest("/api/v1/auth/reset-password", {
+            method: "POST",
+            body: { token, password },
+          }),
+        {
+          success: (result) => result.data?.message || "Password updated.",
+          error: (err) => err.message,
+          rethrow: true,
+        },
+      );
       navigate("/login", { replace: true, state: { passwordReset: true } });
     } catch (err) {
       setError(err.message || "Unable to reset the password.");

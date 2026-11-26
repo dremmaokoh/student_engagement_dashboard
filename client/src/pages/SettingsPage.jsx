@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, { SkeletonBar } from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
 import { LAST_RECORDED_LOGIN_LABEL } from "../lib/classifications.js";
 import { toPercentFraction, weightsTotalPercent } from "../lib/weights.js";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
 function emptyWeightForm() {
@@ -11,6 +13,7 @@ function emptyWeightForm() {
 }
 
 export default function SettingsPage() {
+  const run = useApiAction();
   const [weights, setWeights] = useState(null);
   const [courses, setCourses] = useState([]);
   const [weightForm, setWeightForm] = useState(emptyWeightForm());
@@ -23,6 +26,8 @@ export default function SettingsPage() {
   async function load() {
     setLoading(true);
     setError("");
+    setWeights(null);
+    setCourses([]);
     try {
       const [weightResult, courseResult] = await Promise.all([
         apiRequest("/api/v1/settings/indicator-weights"),
@@ -74,17 +79,21 @@ export default function SettingsPage() {
     setSaving(true);
     setWeightError("");
     try {
-      await apiRequest("/api/v1/settings/indicator-weights", {
-        method: "POST",
-        body: {
-          weights: {
-            lastActivity: Number(weightForm.lastActivity),
-            materialAccess: Number(weightForm.materialAccess),
-            assignmentSubmission: Number(weightForm.assignmentSubmission),
-          },
-          changeNote: weightForm.changeNote,
-        },
-      });
+      await run(
+        () =>
+          apiRequest("/api/v1/settings/indicator-weights", {
+            method: "POST",
+            body: {
+              weights: {
+                lastActivity: Number(weightForm.lastActivity),
+                materialAccess: Number(weightForm.materialAccess),
+                assignmentSubmission: Number(weightForm.assignmentSubmission),
+              },
+              changeNote: weightForm.changeNote,
+            },
+          }),
+        { success: "Indicator weights saved.", rethrow: true },
+      );
       await load();
     } catch (err) {
       setWeightError(err.message);
@@ -106,8 +115,6 @@ export default function SettingsPage() {
         </p>
       ) : null}
 
-      <LoadingState loading={loading} variant="section" message="Loading settings…" />
-
       <section className="card settings-weights-card" aria-labelledby="weights-heading">
         <h2 id="weights-heading">Activity indicator weights</h2>
         <p className="panel-desc">
@@ -116,7 +123,23 @@ export default function SettingsPage() {
           calculation (never treated as zero).
         </p>
 
-        {!loading ? (
+        {loading ? (
+          <ContentSkeleton loading label="Loading indicator weights…">
+            <div className="settings-weights-form" aria-hidden="true">
+              <div className="settings-weight-grid">
+                <SkeletonBar height={40} />
+                <SkeletonBar height={40} />
+                <SkeletonBar height={40} />
+              </div>
+              <SkeletonBar width="32%" />
+              <div className="settings-weights-footer">
+                <SkeletonBar width="42%" />
+                <SkeletonBar height={40} />
+                <SkeletonBar width="24%" height={40} />
+              </div>
+            </div>
+          </ContentSkeleton>
+        ) : (
           <form className="settings-weights-form" onSubmit={onSaveWeights}>
             <div className="settings-weight-grid">
               <label className="settings-weight-field" htmlFor="weightLastActivity">
@@ -188,7 +211,7 @@ export default function SettingsPage() {
               <p className="muted settings-weight-meta">Active global weights: version {weights.version}</p>
             ) : null}
           </form>
-        ) : null}
+        )}
 
         <details className="settings-weight-example">
           <summary>How the weighted score is calculated</summary>
@@ -259,6 +282,15 @@ export default function SettingsPage() {
             placeholder="Course code or name…"
           />
         </div>
+
+        <ContentSkeleton
+          loading={loading}
+          variant="table"
+          columns={skeletonColumns("settingsCourses")}
+          rows={5}
+          tableClassName="settings-courses-table"
+          label="Loading course classification settings…"
+        />
 
         {!loading && filteredCourses.length === 0 ? (
           <p className="lede">No courses match. Create or import a course from the Courses page first.</p>

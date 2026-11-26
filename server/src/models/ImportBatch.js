@@ -12,6 +12,7 @@ const importBatchSchema = new mongoose.Schema(
     monitoringPeriodEnd: { type: Date, default: null },
     validCount: { type: Number, default: 0 },
     rejectedCount: { type: Number, default: 0 },
+    duplicateCount: { type: Number, default: 0 },
     skippedCount: { type: Number, default: 0 },
     importedCount: { type: Number, default: 0 },
     rowErrors: { type: Array, default: [] },

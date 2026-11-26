@@ -104,6 +104,8 @@ Prototype decision: matriculation numbers are **globally unique**. Duplicate act
 
 Empty cells stay `null` (missing), never `0`. Confirm is idempotent. A second file for the same student and period is counted as skipped. Dates without a timezone are treated as UTC calendar dates.
 
+Preview and confirm responses use the same batch summary: `totalCount`, `validCount`, `rejectedCount`, `duplicateCount`, `status`, `errors` (each with `rowNumber`, `field`, `reason` and optional student context), plus `validRows` while the batch is previewed. Confirm requires at least one valid row and reports the actual `importedCount` and `skippedCount` after persistence.
+
 ## Phase 4 — Configuration and scoring
 
 ### Global indicator weights (lecturer scope)

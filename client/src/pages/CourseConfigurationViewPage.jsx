@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonBar,
+  SkeletonPageHeader,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import ConfigurationReadOnlyPanel from "../components/settings/ConfigurationReadOnlyPanel.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
@@ -18,6 +23,9 @@ export default function CourseConfigurationViewPage() {
   async function load() {
     setLoading(true);
     setError("");
+    setCourse(null);
+    setConfig(null);
+    setGlobalWeights(null);
     try {
       const [courseResult, configResult, weightsResult] = await Promise.all([
         apiRequest(`/api/v1/courses/${courseId}`),
@@ -41,7 +49,48 @@ export default function CourseConfigurationViewPage() {
   if (loading) {
     return (
       <main className="content">
-        <LoadingState loading variant="page" size="lg" message="Fetching course configuration…" />
+        <ContentSkeleton loading label="Fetching course configuration…">
+          <SkeletonPageHeader />
+          <section className="card" aria-hidden="true">
+            <div className="settings-config-readonly">
+              <section className="settings-config-block">
+                <SkeletonBar width="38%" height={16} />
+                <SkeletonBar width="66%" />
+                <div className="settings-weight-list">
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <SkeletonBar key={index} width="78%" />
+                  ))}
+                </div>
+              </section>
+              <section className="settings-config-block">
+                <SkeletonBar width="34%" height={16} />
+                <SkeletonBar width="58%" />
+                <SkeletonTable
+                  columns={skeletonColumns("bands")}
+                  rows={5}
+                  tableClassName="settings-compact-table"
+                />
+              </section>
+              <section className="settings-config-block">
+                <SkeletonBar width="30%" height={16} />
+                <SkeletonBar width="72%" />
+              </section>
+              <section className="settings-config-block">
+                <SkeletonBar width="32%" height={16} />
+                <SkeletonBar width="70%" />
+              </section>
+              <section className="settings-config-block">
+                <SkeletonBar width="42%" height={16} />
+                <SkeletonTable
+                  columns={skeletonColumns("boundaries")}
+                  rows={3}
+                  tableClassName="settings-compact-table"
+                />
+                <SkeletonBar width="64%" />
+              </section>
+            </div>
+          </section>
+        </ContentSkeleton>
       </main>
     );
   }

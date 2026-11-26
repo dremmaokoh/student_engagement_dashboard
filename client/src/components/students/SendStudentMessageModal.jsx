@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useApiAction } from "../../hooks/useApiAction.js";
 import { apiRequest } from "../../services/api.js";
 
 function formatCourseContext(course) {
@@ -18,6 +19,7 @@ export default function SendStudentMessageModal({
   onSent,
 }) {
   const dialogRef = useRef(null);
+  const run = useApiAction();
   const [courseId, setCourseId] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -69,12 +71,21 @@ export default function SendStudentMessageModal({
       if (courseId) {
         body.courseId = courseId;
       }
-      const result = await apiRequest(`/api/v1/students/${student.id}/communications`, {
-        method: "POST",
-        body,
-      });
+      const sent = await run(
+        async () => {
+          const result = await apiRequest(`/api/v1/students/${student.id}/communications`, {
+            method: "POST",
+            body,
+          });
+          return result.data?.communication;
+        },
+        {
+          success: "Message sent successfully.",
+          rethrow: true,
+        },
+      );
       setSuccess("Message sent successfully.");
-      onSent?.(result.data?.communication);
+      onSent?.(sent.data);
       setTimeout(() => {
         onClose?.();
       }, 900);
@@ -89,7 +100,7 @@ export default function SendStudentMessageModal({
   }
 
   return (
-    <dialog ref={dialogRef} className="student-modal student-message-modal" onClose={onClose}>
+    <dialog ref={dialogRef} className="student-modal student-modal--default" onClose={onClose}>
       <form className="student-modal-form" onSubmit={onSubmit}>
         <header className="student-modal-header">
           <h2>Send message</h2>

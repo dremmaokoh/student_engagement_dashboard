@@ -49,7 +49,11 @@ export default function CourseGenerateClassificationModal({
   }
 
   return (
-    <dialog ref={dialogRef} className="student-modal course-workspace-modal" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="student-modal student-modal--default course-workspace-modal"
+      onClose={onClose}
+    >
       <div className="student-modal-form course-workspace-modal-body">
         <header className="student-modal-header">
           <h2>Name This Classification Run</h2>

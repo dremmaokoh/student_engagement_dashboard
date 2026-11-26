@@ -3,6 +3,7 @@ import ClassificationResult from "../models/ClassificationResult.js";
 import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
 import Student from "../models/Student.js";
+import { clearDashboardCache } from "../utils/dashboardCache.js";
 import { HttpError } from "../utils/httpError.js";
 import { resolveRosterClassificationContext } from "./classification/classificationService.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
@@ -10,16 +11,22 @@ import { toPublicCourse, toPublicEnrollment, toPublicStudent } from "../utils/to
 
 export async function listStudents(query, lecturerId) {
   const { page, limit, skip } = parsePagination(query);
-  const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } }).select("_id code name");
+  const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } })
+    .select("_id code name")
+    .lean();
   const courseIds = courses.map((course) => course._id);
   if (!courseIds.length) {
     return paginated([], 0, page, limit);
   }
+  const courseById = new Map(courses.map((course) => [String(course._id), course]));
 
   const enrollments = await Enrollment.find({
     courseId: { $in: courseIds },
     status: query.enrollmentStatus === "all" ? { $in: ["active", "withdrawn"] } : "active",
-  }).populate("studentId");
+  })
+    .select("studentId courseId status enrolledAt")
+    .populate("studentId", "fullName matriculationNumber email createdAt updatedAt")
+    .lean();
 
   const byStudent = new Map();
   for (const enrollment of enrollments) {
@@ -34,7 +41,7 @@ export async function listStudents(query, lecturerId) {
         enrollments: [],
       });
     }
-    const course = courses.find((item) => String(item._id) === String(enrollment.courseId));
+    const course = courseById.get(String(enrollment.courseId));
     const entry = byStudent.get(studentId);
     entry.enrollments.push(toPublicEnrollment(enrollment, enrollment.studentId));
     if (course) {
@@ -69,7 +76,8 @@ export async function listStudents(query, lecturerId) {
     courseId: { $in: courseIds },
   })
     .sort({ generatedAt: -1 })
-    .select("studentId courseId classification displayScore generatedAt activitySnapshot monitoringPeriodStart monitoringPeriodEnd");
+    .select("studentId courseId classification displayScore generatedAt activitySnapshot monitoringPeriodStart monitoringPeriodEnd")
+    .lean();
 
   const resultByKey = new Map();
   for (const result of latestResults) {
@@ -139,24 +147,29 @@ export async function getStudentParticipationProfile(studentId, lecturerId) {
     throw new HttpError(404, "Student not found.");
   }
 
-  const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } }).select("_id code name");
+  const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } })
+    .select("_id code name")
+    .lean();
   const courseIds = courses.map((course) => course._id);
   if (!courseIds.length) {
     throw new HttpError(404, "Student not found.");
   }
+  const courseById = new Map(courses.map((course) => [String(course._id), course]));
 
   const enrollments = await Enrollment.find({
     studentId,
     courseId: { $in: courseIds },
     status: "active",
-  });
+  })
+    .select("courseId")
+    .lean();
   if (!enrollments.length) {
     throw new HttpError(404, "Student not found.");
   }
 
   const studentCourses = enrollments
     .map((enrollment) => {
-      const course = courses.find((item) => String(item._id) === String(enrollment.courseId));
+      const course = courseById.get(String(enrollment.courseId));
       if (!course) {
         return null;
       }
@@ -172,7 +185,8 @@ export async function getStudentParticipationProfile(studentId, lecturerId) {
     .sort({ generatedAt: -1 })
     .select(
       "courseId classification displayScore generatedAt activitySnapshot monitoringPeriodStart monitoringPeriodEnd",
-    );
+    )
+    .lean();
 
   const resultByCourse = new Map();
   for (const result of latestResults) {
@@ -196,6 +210,7 @@ export async function getStudentParticipationProfile(studentId, lecturerId) {
 export async function createStudent(input) {
   try {
     const student = await Student.create(input);
+    clearDashboardCache();
     return toPublicStudent(student);
   } catch (error) {
     if (error.code === 11000) {
@@ -238,6 +253,7 @@ export async function updateStudent(studentId, input) {
     if (!student) {
       throw new HttpError(404, "Student not found.");
     }
+    clearDashboardCache();
     return toPublicStudent(student);
   } catch (error) {
     if (error.code === 11000) {
@@ -255,7 +271,11 @@ export async function listCourseStudents(courseId, query) {
     filter.status = status;
   }
 
-  const enrollments = await Enrollment.find(filter).sort({ enrolledAt: -1 }).populate("studentId");
+  const enrollments = await Enrollment.find(filter)
+    .sort({ enrolledAt: -1 })
+    .select("studentId courseId status enrolledAt")
+    .populate("studentId", "fullName matriculationNumber email createdAt updatedAt")
+    .lean();
   let items = enrollments.filter((row) => row.studentId).map((row) => toPublicEnrollment(row, row.studentId));
 
   const q = String(query.q || "").trim().toLowerCase();
@@ -279,7 +299,10 @@ export async function listCourseStudents(courseId, query) {
       courseId,
       runId: rosterContext.runId,
       studentId: { $in: studentIds },
-    }).sort({ generatedAt: -1 });
+    })
+      .sort({ generatedAt: -1 })
+      .select("studentId classification displayScore activitySnapshot")
+      .lean();
     for (const result of results) {
       const key = String(result.studentId);
       if (!latestByStudent.has(key)) {
@@ -339,6 +362,7 @@ export async function enrolStudent(courseId, studentId) {
     existing.status = "active";
     existing.enrolledAt = new Date();
     await existing.save();
+    clearDashboardCache();
     return toPublicEnrollment(existing, student);
   }
 
@@ -348,6 +372,7 @@ export async function enrolStudent(courseId, studentId) {
     status: "active",
     enrolledAt: new Date(),
   });
+  clearDashboardCache();
   return toPublicEnrollment(enrollment, student);
 }
 
@@ -399,6 +424,7 @@ export async function enrolStudents(courseId, studentIdsInput) {
   }
 
   const created = operations.length ? (await Enrollment.bulkWrite(operations, { ordered: false })).insertedCount : 0;
+  clearDashboardCache();
   return {
     enrolled: created + reactivated,
     alreadyEnrolled: studentIds.length - created - reactivated,
@@ -420,6 +446,7 @@ export async function updateEnrollment(enrollmentId, lecturerId, { status }) {
 
   enrollment.status = status;
   await enrollment.save();
+  clearDashboardCache();
   const student = await Student.findById(enrollment.studentId);
   return toPublicEnrollment(enrollment, student);
 }

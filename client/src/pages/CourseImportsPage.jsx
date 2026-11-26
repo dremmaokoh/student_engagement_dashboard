@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import LoadingState from "../components/common/LoadingState.jsx";
+import ContentSkeleton, {
+  SkeletonPageHeader,
+  SkeletonPanel,
+  SkeletonTable,
+} from "../components/common/ContentSkeleton.jsx";
+import { skeletonColumns } from "../lib/skeletonColumns.js";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
+import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest, downloadAuthenticated } from "../services/api.js";
 
 export default function CourseImportsPage() {
   const { courseId } = useParams();
+  const run = useApiAction();
   const [course, setCourse] = useState(null);
   const [history, setHistory] = useState([]);
   const [file, setFile] = useState(null);
@@ -21,6 +28,8 @@ export default function CourseImportsPage() {
   async function load() {
     setLoading(true);
     setError("");
+    setCourse(null);
+    setHistory([]);
     try {
       const [courseResult, imports] = await Promise.all([
         apiRequest(`/api/v1/courses/${courseId}`),
@@ -51,10 +60,14 @@ export default function CourseImportsPage() {
       formData.append("file", file);
       formData.append("monitoringPeriodStart", periodStart);
       formData.append("monitoringPeriodEnd", periodEnd);
-      const result = await apiRequest(`/api/v1/courses/${courseId}/imports/preview`, {
-        method: "POST",
-        formData,
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/imports/preview`, {
+            method: "POST",
+            formData,
+          }),
+        { rethrow: true },
+      );
       setPreview(result.data);
       await load();
     } catch (err) {
@@ -71,10 +84,18 @@ export default function CourseImportsPage() {
     setWorking(true);
     setError("");
     try {
-      const result = await apiRequest(`/api/v1/courses/${courseId}/imports/confirm`, {
-        method: "POST",
-        body: { importId: preview.id },
-      });
+      const { data: result } = await run(
+        () =>
+          apiRequest(`/api/v1/courses/${courseId}/imports/confirm`, {
+            method: "POST",
+            body: { importId: preview.id },
+          }),
+        {
+          success: (data) =>
+            `Imported ${data.data.importedCount} records, skipped ${data.data.skippedCount}.`,
+          rethrow: true,
+        },
+      );
       setPreview(result.data);
       await load();
     } catch (err) {
@@ -91,9 +112,13 @@ export default function CourseImportsPage() {
         periodStart,
         periodEnd,
       });
-      await downloadAuthenticated(
-        `/api/v1/courses/${courseId}/imports/template?${params.toString()}`,
-        `${course?.code || "course"}-activity-import-template.csv`,
+      await run(
+        () =>
+          downloadAuthenticated(
+            `/api/v1/courses/${courseId}/imports/template?${params.toString()}`,
+            `${course?.code || "course"}-activity-import-template.csv`,
+          ),
+        { success: "Template downloaded.", rethrow: true },
       );
     } catch (err) {
       setError(err.message);
@@ -103,7 +128,13 @@ export default function CourseImportsPage() {
   if (loading) {
     return (
       <main className="content">
-        <LoadingState loading variant="page" size="lg" message="Loading import history…" />
+        <ContentSkeleton loading label="Loading import history…">
+          <SkeletonPageHeader />
+          <SkeletonPanel className="card" titleWidth="30%" showTitle lines={["70%", "58%", "62%"]} />
+          <SkeletonPanel className="card table-card" titleWidth="32%" showTitle>
+            <SkeletonTable columns={skeletonColumns("importHistory")} rows={4} />
+          </SkeletonPanel>
+        </ContentSkeleton>
       </main>
     );
   }
@@ -218,8 +249,8 @@ export default function CourseImportsPage() {
 
       <section className="card table-card">
         <h2>Import history</h2>
-        {history.length === 0 ? <p className="lede">No imports yet.</p> : null}
-        {history.length > 0 ? (
+        {!loading && history.length === 0 ? <p className="lede">No imports yet.</p> : null}
+        {!loading && history.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>
