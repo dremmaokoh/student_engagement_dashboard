@@ -13,7 +13,7 @@ const app = createApp();
 const PREFIX = "phase3-test-";
 
 const HEADERS =
-  "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd";
+  "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd";
 
 function csv(body) {
   return Buffer.from(body, "utf8");
@@ -70,7 +70,7 @@ describe("CSV import", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(response.status).toBe(200);
     expect(response.text).toContain(
-      "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+      "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
     );
     expect(response.text).not.toContain("materialAccessEvents");
     expect(response.text).not.toContain("assignmentSubmissionEvents");
@@ -82,12 +82,90 @@ describe("CSV import", () => {
   );
 
   test(
+    "activity template omits columns for a deactivated indicator",
+    async () => {
+      const { token, courseId, matric } = await seed();
+      const auth = { Authorization: `Bearer ${token}` };
+      await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+      const saved = await request(app).post("/api/v1/settings/indicator-weights").set(auth).send({
+        weights: { lastActivity: 30, materialAccess: 40, assignmentSubmission: 60 },
+        activeIndicators: { lastActivity: false, materialAccess: true, assignmentSubmission: true },
+      });
+      expect(saved.status).toBe(201);
+
+      const response = await request(app).get(`/api/v1/courses/${courseId}/imports/template`).set(auth);
+      expect(response.status).toBe(200);
+      const header = response.text.replace(/^\uFEFF/, "").split(/\r?\n/)[0];
+      expect(header).toBe(
+        "studentIdentifier,studentName,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+      );
+      expect(header).not.toContain("lastLearningActivityAt");
+
+      const reduced = csv(
+        [
+          header,
+          `${matric},Import Student,10,8,4,3,2026-10-01,2026-10-31`,
+        ].join("\n"),
+      );
+      const preview = await request(app)
+        .post(`/api/v1/courses/${courseId}/imports/preview`)
+        .set(auth)
+        .field("monitoringPeriodStart", "2026-10-01")
+        .field("monitoringPeriodEnd", "2026-10-31")
+        .attach("file", reduced, "activity.csv");
+      expect(preview.status).toBe(201);
+      expect(preview.body.data.validRows[0].learningItemsCompleted).toBe(8);
+      expect(preview.body.data.validRows[0].lastLearningActivityAt).toBeNull();
+
+      const withRecency = csv(
+        [
+          HEADERS,
+          `${matric},Import Student,2026-10-28,10,8,4,3,2026-10-01,2026-10-31`,
+        ].join("\n"),
+      );
+      const rejected = await request(app)
+        .post(`/api/v1/courses/${courseId}/imports/preview`)
+        .set(auth)
+        .attach("file", withRecency, "full.csv");
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.message || rejected.body.error || "").toMatch(/lastLearningActivityAt/i);
+
+      const withoutAssignments = await request(app).post("/api/v1/settings/indicator-weights").set(auth).send({
+        weights: { lastActivity: 40, materialAccess: 60, assignmentSubmission: 0 },
+        activeIndicators: { lastActivity: true, materialAccess: true, assignmentSubmission: false },
+      });
+      expect(withoutAssignments.status).toBe(201);
+      const assignmentTemplate = await request(app).get(`/api/v1/courses/${courseId}/imports/template`).set(auth);
+      const assignmentHeader = assignmentTemplate.text.replace(/^\uFEFF/, "").split(/\r?\n/)[0];
+      expect(assignmentHeader).toBe(
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,monitoringPeriodStart,monitoringPeriodEnd",
+      );
+      expect(assignmentHeader).not.toContain("assignmentsDue");
+      expect(assignmentHeader).not.toContain("assignmentsSubmitted");
+
+      const withoutMaterials = await request(app).post("/api/v1/settings/indicator-weights").set(auth).send({
+        weights: { lastActivity: 45, materialAccess: 0, assignmentSubmission: 55 },
+        activeIndicators: { lastActivity: true, materialAccess: false, assignmentSubmission: true },
+      });
+      expect(withoutMaterials.status).toBe(201);
+      const materialTemplate = await request(app).get(`/api/v1/courses/${courseId}/imports/template`).set(auth);
+      const materialHeader = materialTemplate.text.replace(/^\uFEFF/, "").split(/\r?\n/)[0];
+      expect(materialHeader).toBe(
+        "studentIdentifier,studentName,lastLearningActivityAt,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+      );
+      expect(materialHeader).not.toContain("learningMaterialsAvailable");
+      expect(materialHeader).not.toContain("learningMaterialsCompleted");
+    },
+    120000,
+  );
+
+  test(
     "rejects activity CSV files that include removed event columns",
     async () => {
     const { token, courseId, matric } = await seed();
     const withEvents = csv(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd,materialAccessEvents,assignmentSubmissionEvents",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd,materialAccessEvents,assignmentSubmissionEvents",
         `${matric},Import Student,2026-10-20,10,8,4,3,2026-10-01,2026-10-31,,`,
       ].join("\n"),
     );
@@ -98,7 +176,7 @@ describe("CSV import", () => {
       .field("monitoringPeriodEnd", "2026-10-31")
       .attach("file", withEvents, "events.csv");
     expect(preview.status).toBe(400);
-    expect(preview.body.message || preview.body.error || "").toMatch(/exactly|Unexpected|nine/i);
+    expect(preview.body.message || preview.body.error || "").toMatch(/exactly|Unexpected|ten/i);
     },
     120000
   );
@@ -109,7 +187,7 @@ describe("CSV import", () => {
     const { token, courseId, matric } = await seed();
     const invalid = csv(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
         `${matric},Import Student,,5,9,2,1,2026-10-01,2026-10-31`,
       ].join("\n"),
     );
@@ -134,7 +212,7 @@ describe("CSV import", () => {
     const { token, courseId, matric } = await seed();
     const valid = csv(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
         `${matric},Import Student,2026-10-20,10,8,4,3,2026-10-01,2026-10-31`,
       ].join("\n"),
     );
@@ -148,12 +226,12 @@ describe("CSV import", () => {
 
     expect(preview.status).toBe(201);
     expect(preview.body.data.validCount).toBe(1);
-    expect(preview.body.data.validRows[0].lastActivityAt).toBeTruthy();
-    expect(preview.body.data.validRows[0].materialsAvailable).toBe(10);
+    expect(preview.body.data.validRows[0].lastLearningActivityAt).toBeTruthy();
+    expect(preview.body.data.validRows[0].learningItemsRequired).toBe(10);
 
     const missingDate = csv(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
         `${matric},Import Student,,10,0,4,0,2026-10-01,2026-10-31`,
       ].join("\n"),
     );
@@ -161,8 +239,8 @@ describe("CSV import", () => {
       .post(`/api/v1/courses/${courseId}/imports/preview`)
       .set("Authorization", `Bearer ${token}`)
       .attach("file", missingDate, "missing.csv");
-    expect(missingPreview.body.data.validRows[0].lastActivityAt).toBeNull();
-    expect(missingPreview.body.data.validRows[0].materialsAccessed).toBe(0);
+    expect(missingPreview.body.data.validRows[0].lastLearningActivityAt).toBeNull();
+    expect(missingPreview.body.data.validRows[0].learningItemsCompleted).toBe(0);
 
     const confirmed = await request(app)
       .post(`/api/v1/courses/${courseId}/imports/confirm`)
@@ -197,7 +275,7 @@ describe("CSV import", () => {
       const { token, courseId } = await seed();
       const invalid = csv(
         [
-          "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+          "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
           "UNKNOWN999,Unknown Student,2026-10-20,10,8,4,3,2026-10-01,2026-10-31",
         ].join("\n"),
       );
@@ -266,8 +344,8 @@ describe("CSV import", () => {
       expect(preview.body.data.validCount).toBe(1);
       expect(preview.body.data.rejectedCount).toBe(1);
       expect(preview.body.data.errors[0].reason).toMatch(/non-negative integer/i);
-      expect(preview.body.data.validRows[0].lastActivityAt).toBeNull();
-      expect(preview.body.data.validRows[0].materialsAccessed).toBeNull();
+      expect(preview.body.data.validRows[0].lastLearningActivityAt).toBeNull();
+      expect(preview.body.data.validRows[0].learningItemsCompleted).toBeNull();
       expect(preview.body.data.validRows[0].assignmentsSubmitted).toBeNull();
     },
     120000
@@ -316,7 +394,7 @@ describe("CSV import", () => {
       const { token, courseId, matric } = await seed();
       const missingColumn = csv(
         [
-          "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,monitoringPeriodStart,monitoringPeriodEnd",
+          "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,monitoringPeriodStart,monitoringPeriodEnd",
           `${matric},Import Student,2026-10-20,10,8,4,2026-10-01,2026-10-31`,
         ].join("\n"),
       );
@@ -358,7 +436,7 @@ describe("CSV import", () => {
       const { token, courseId, matric } = await seed();
       const spacedHeaders = csv(
         [
-          "Student Identifier,Student Name,Last Activity At,Materials Available,Materials Accessed,Assignments Due,Assignments Submitted,Monitoring Period Start,Monitoring Period End",
+          "Student Identifier,Student Name,Last Learning Activity At,Learning Items Required,Learning Items Completed,Assignments Due,Assignments Submitted,Monitoring Period Start,Monitoring Period End",
           `${matric},Import Student,2026-10-20,10,8,4,3,2026-10-01,2026-10-31`,
         ].join("\n"),
       );
@@ -369,7 +447,39 @@ describe("CSV import", () => {
 
       expect(preview.status).toBe(201);
       expect(preview.body.data.validCount).toBe(1);
-      expect(preview.body.data.validRows[0].materialsAccessed).toBe(8);
+      expect(preview.body.data.validRows[0].learningItemsCompleted).toBe(8);
+    },
+    120000
+  );
+
+  test(
+    "accepts a timestamp without an activity type and rejects the removed type column",
+    async () => {
+      const { token, courseId, matric } = await seed();
+      const timestampOnly = csv(
+        [HEADERS, `${matric},Import Student,,10,8,4,3,2026-10-01,2026-10-31`].join("\n"),
+      );
+      const preview = await request(app)
+        .post(`/api/v1/courses/${courseId}/imports/preview`)
+        .set("Authorization", `Bearer ${token}`)
+        .attach("file", timestampOnly, "timestamp-only.csv");
+      expect(preview.status).toBe(201);
+      expect(preview.body.data.validCount).toBe(1);
+      expect(preview.body.data.validRows[0].lastLearningActivityAt).toBeNull();
+      expect(preview.body.data.validRows[0].lastLearningActivityType).toBeUndefined();
+
+      const withType = csv(
+        [
+          `${HEADERS.slice(0, HEADERS.indexOf(",learningMaterialsAvailable"))},lastLearningActivityType${HEADERS.slice(HEADERS.indexOf(",learningMaterialsAvailable"))}`,
+          `${matric},Import Student,2026-10-20,lecture_view,10,8,4,3,2026-10-01,2026-10-31`,
+        ].join("\n"),
+      );
+      const rejected = await request(app)
+        .post(`/api/v1/courses/${courseId}/imports/preview`)
+        .set("Authorization", `Bearer ${token}`)
+        .attach("file", withType, "with-type.csv");
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.message || rejected.body.error || "").toMatch(/lastLearningActivityType/i);
     },
     120000
   );

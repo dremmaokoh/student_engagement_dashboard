@@ -10,6 +10,11 @@ const lecturerIndicatorWeightsSchema = new mongoose.Schema(
       materialAccess: { type: Number, required: true },
       assignmentSubmission: { type: Number, required: true },
     },
+    activeIndicators: {
+      lastActivity: { type: Boolean, default: true },
+      materialAccess: { type: Boolean, default: true },
+      assignmentSubmission: { type: Boolean, default: true },
+    },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     changeNote: { type: String, default: "", maxlength: 500 },
   },

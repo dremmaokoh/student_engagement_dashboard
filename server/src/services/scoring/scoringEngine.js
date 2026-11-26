@@ -1,5 +1,14 @@
 import { HttpError } from "../../utils/httpError.js";
-import { CLASSIFICATIONS, DEFAULT_BOUNDARIES, DEFAULT_LAST_ACTIVITY_BANDS, DEFAULT_WEIGHTS, STATUSES, displayScore } from "./defaults.js";
+import { resolveActivityMeasures } from "./activityIndicators.js";
+import {
+  CLASSIFICATIONS,
+  DEFAULT_ACTIVE_INDICATORS,
+  DEFAULT_BOUNDARIES,
+  DEFAULT_LAST_ACTIVITY_BANDS,
+  DEFAULT_WEIGHTS,
+  STATUSES,
+  displayScore,
+} from "./defaults.js";
 
 export class ScoringValidationError extends HttpError {
   constructor(message) {
@@ -25,19 +34,19 @@ export function calendarDaysBetween(start, end) {
 }
 
 export function calculateLastActivityScore(
-  lastActivityAt,
+  lastLearningActivityAt,
   monitoringPeriodEnd,
   bands = DEFAULT_LAST_ACTIVITY_BANDS,
 ) {
-  if (isMissing(lastActivityAt) || isMissing(monitoringPeriodEnd)) {
+  if (isMissing(lastLearningActivityAt) || isMissing(monitoringPeriodEnd)) {
     return {
       status: STATUSES.INSUFFICIENT_DATA,
       score: null,
-      reason: "Last recorded LMS login/activity timestamp is missing.",
+      reason: "No qualifying learning activity timestamp was recorded for this monitoring period.",
     };
   }
 
-  const days = calendarDaysBetween(lastActivityAt, monitoringPeriodEnd);
+  const days = calendarDaysBetween(lastLearningActivityAt, monitoringPeriodEnd);
   const elapsed = Math.max(0, days);
   const band = bands.find((item) => {
     const minOk = elapsed >= item.minDays;
@@ -46,42 +55,42 @@ export function calculateLastActivityScore(
   });
 
   if (!band) {
-    throw new ScoringValidationError("Last-activity bands do not cover this number of days.");
+    throw new ScoringValidationError("Learning activity recency bands do not cover this number of days.");
   }
 
   return {
     status: STATUSES.CALCULATED,
     score: band.score,
     daysSinceLastActivity: elapsed,
-    reason: `Last recorded LMS login/activity was ${elapsed} calendar day(s) before the end of the monitoring period (UTC).`,
+    reason: `The most recent qualifying learning activity was ${elapsed} calendar day(s) before the end of the monitoring period (UTC).`,
   };
 }
 
-export function calculateMaterialAccessScore(materialsAccessed, materialsAvailable) {
-  if (materialsAvailable === 0) {
+export function calculateMaterialAccessScore(learningItemsCompleted, learningItemsRequired) {
+  if (learningItemsRequired === 0) {
     return {
       status: STATUSES.NOT_APPLICABLE,
       score: null,
-      reason: "No relevant materials were available during the monitoring period.",
+      reason: "No learning items were required during the monitoring period.",
     };
   }
-  if (isMissing(materialsAvailable) || isMissing(materialsAccessed)) {
+  if (isMissing(learningItemsRequired) || isMissing(learningItemsCompleted)) {
     return {
       status: STATUSES.INSUFFICIENT_DATA,
       score: null,
-      reason: "Course material access logs are incomplete.",
+      reason: "Required learning-item completion records are incomplete. Opening or downloading a material is not treated as completion.",
     };
   }
-  if (materialsAvailable < 0 || materialsAccessed < 0) {
-    throw new ScoringValidationError("Material counts must be non-negative.");
+  if (learningItemsRequired < 0 || learningItemsCompleted < 0) {
+    throw new ScoringValidationError("Learning item counts must be non-negative.");
   }
-  if (materialsAccessed > materialsAvailable) {
-    throw new ScoringValidationError("Accessed materials cannot exceed available materials.");
+  if (learningItemsCompleted > learningItemsRequired) {
+    throw new ScoringValidationError("Completed learning items cannot exceed required learning items.");
   }
   return {
     status: STATUSES.CALCULATED,
-    score: (materialsAccessed / materialsAvailable) * 100,
-    reason: `Course material access is ${materialsAccessed}/${materialsAvailable}.`,
+    score: (learningItemsCompleted / learningItemsRequired) * 100,
+    reason: `Learning material completion is ${learningItemsCompleted}/${learningItemsRequired}.`,
   };
 }
 
@@ -145,6 +154,10 @@ export function classifyOverallScore(overallScore, boundaries = DEFAULT_BOUNDARI
   return CLASSIFICATIONS.INACTIVE;
 }
 
+function activeStatuses(statuses) {
+  return Object.entries(statuses).filter(([, status]) => status !== STATUSES.DISABLED);
+}
+
 export function calculateOverallScore(
   indicatorResults,
   configuredWeights = DEFAULT_WEIGHTS,
@@ -155,8 +168,9 @@ export function calculateOverallScore(
     materialAccess: indicatorResults.materialAccess.status,
     assignmentSubmission: indicatorResults.assignmentSubmission.status,
   };
+  const participating = activeStatuses(statuses);
 
-  if (Object.values(statuses).every((status) => status === STATUSES.NOT_APPLICABLE)) {
+  if (participating.length > 0 && participating.every(([, status]) => status === STATUSES.NOT_APPLICABLE)) {
     return {
       overallScore: null,
       displayScore: null,
@@ -164,11 +178,11 @@ export function calculateOverallScore(
       noClassifiableActivity: true,
       configuredWeights,
       effectiveWeights: { lastActivity: 0, materialAccess: 0, assignmentSubmission: 0 },
-      reason: "No classifiable activity: all indicators are Not Applicable.",
+      reason: "No classifiable activity: every active indicator is Not Applicable.",
     };
   }
 
-  if (Object.values(statuses).some((status) => status === STATUSES.INSUFFICIENT_DATA)) {
+  if (participating.some(([, status]) => status === STATUSES.INSUFFICIENT_DATA)) {
     const { effectiveWeights } = calculateEffectiveWeights(statuses, configuredWeights);
     return {
       overallScore: null,
@@ -215,22 +229,25 @@ export function generateStudentClassification(activityRecord, config) {
   }
 
   const weights = config?.weights || DEFAULT_WEIGHTS;
+  const activeIndicators = { ...DEFAULT_ACTIVE_INDICATORS, ...(config?.activeIndicators || {}) };
   const bands = config?.lastActivityBands || DEFAULT_LAST_ACTIVITY_BANDS;
   const boundaries = config?.classificationBoundaries || DEFAULT_BOUNDARIES;
 
-  const lastActivity = calculateLastActivityScore(
-    activityRecord.lastActivityAt,
-    end,
-    bands,
-  );
-  const materialAccess = calculateMaterialAccessScore(
-    activityRecord.materialsAccessed,
-    activityRecord.materialsAvailable,
-  );
-  const assignmentSubmission = calculateAssignmentSubmissionScore(
-    activityRecord.assignmentsSubmitted,
-    activityRecord.assignmentsDue,
-  );
+  const measures = resolveActivityMeasures(activityRecord);
+  const excluded = {
+    status: STATUSES.DISABLED,
+    score: null,
+    reason: "This indicator is excluded from the active global configuration.",
+  };
+  const lastActivity = activeIndicators.lastActivity
+    ? calculateLastActivityScore(measures.lastLearningActivityAt, end, bands)
+    : excluded;
+  const materialAccess = activeIndicators.materialAccess
+    ? calculateMaterialAccessScore(measures.learningItemsCompleted, measures.learningItemsRequired)
+    : excluded;
+  const assignmentSubmission = activeIndicators.assignmentSubmission
+    ? calculateAssignmentSubmissionScore(activityRecord.assignmentsSubmitted, activityRecord.assignmentsDue)
+    : excluded;
 
   const overall = calculateOverallScore(
     { lastActivity, materialAccess, assignmentSubmission },
@@ -240,6 +257,7 @@ export function generateStudentClassification(activityRecord, config) {
 
   return {
     indicators: { lastActivity, materialAccess, assignmentSubmission },
+    activeIndicators,
     ...overall,
   };
 }

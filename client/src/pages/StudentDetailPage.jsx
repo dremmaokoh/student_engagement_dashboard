@@ -254,12 +254,17 @@ export default function StudentDetailPage() {
                               <h3 className="student-detail-evidence-title">Evidence — {row.course.code}</h3>
                               <dl className="student-evidence-dl">
                                 <div>
-                                  <dt>Last Recorded Login</dt>
-                                  <dd>{dateLabel(row.lastActivityAt)}</dd>
+                                  <dt>Learning Activity Recency</dt>
+                                  <dd>{dateLabel(row.lastLearningActivityAt || row.lastActivityAt)}</dd>
                                 </div>
                                 <div>
-                                  <dt>Course materials accessed</dt>
-                                  <dd>{accessLabel(row.materialsAccessed, row.materialsAvailable)}</dd>
+                                  <dt>Learning Material Completion</dt>
+                                  <dd>
+                                    {accessLabel(
+                                      row.learningItemsCompleted ?? row.materialsAccessed,
+                                      row.learningItemsRequired ?? row.materialsAvailable,
+                                    )}
+                                  </dd>
                                 </div>
                                 <div>
                                   <dt>Assignments submitted</dt>

@@ -1,4 +1,4 @@
-studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd
+studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd
 CSC/2021/001,Ada Student,2026-10-29,10,8,4,3,2026-10-01,2026-10-31
 CSC/2021/002,Bola Attention,2026-10-21,10,5,4,2,2026-10-01,2026-10-31
 CSC/2021/003,Chidi Inactive,2026-10-06,10,2,4,0,2026-10-01,2026-10-31

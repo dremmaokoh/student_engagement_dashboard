@@ -6,15 +6,15 @@ import ActivityRecord from "../../models/ActivityRecord.js";
 import { assertCsvRowLimit, chunk } from "../../utils/csvLimits.js";
 import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
+import { getActiveGlobalWeights } from "../globalWeightsService.js";
 import {
-  CSV_COLUMNS,
   CSV_TEMPLATE,
+  activityColumnsFor,
   canonicaliseActivityHeader,
-  normaliseActivityHeaderKey,
 } from "./csvColumns.js";
 import { missingOrDate, missingOrInteger, validateCounts, validatePeriod } from "./rowValidation.js";
 
-function assertActivityHeaders(headers) {
+function assertActivityHeaders(headers, columns) {
   const seen = new Set();
   const normalised = [];
   for (const header of headers) {
@@ -28,19 +28,19 @@ function assertActivityHeaders(headers) {
     seen.add(column);
     normalised.push(column);
   }
-  const missing = CSV_COLUMNS.filter((column) => !normalised.includes(column));
+  const missing = columns.filter((column) => !normalised.includes(column));
   if (missing.length) {
     throw new HttpError(400, `CSV must include columns: ${missing.join(", ")}.`);
   }
-  const unexpected = normalised.filter((column) => !CSV_COLUMNS.includes(column));
+  const unexpected = normalised.filter((column) => !columns.includes(column));
   if (unexpected.length) {
     throw new HttpError(
       400,
-      `CSV must contain exactly these nine columns. Unexpected: ${unexpected.join(", ")}.`,
+      `CSV columns must match the active indicator template. Unexpected: ${unexpected.join(", ")}.`,
     );
   }
-  if (normalised.length !== CSV_COLUMNS.length) {
-    throw new HttpError(400, "CSV must contain exactly nine columns as defined by the activity template.");
+  if (normalised.length !== columns.length) {
+    throw new HttpError(400, "CSV columns must match the active indicator template.");
   }
 }
 
@@ -49,8 +49,8 @@ function fileHash(buffer) {
 }
 
 function rowValue(row, key) {
-  const target = normaliseActivityHeaderKey(key);
-  const match = Object.keys(row).find((name) => normaliseActivityHeaderKey(name) === target);
+  const target = canonicaliseActivityHeader(key);
+  const match = Object.keys(row).find((name) => canonicaliseActivityHeader(name) === target);
   return match ? row[match] : undefined;
 }
 
@@ -73,7 +73,11 @@ export function getCsvTemplate() {
   return CSV_TEMPLATE;
 }
 
-export async function buildCourseActivityCsvTemplate(courseId, { periodStart = "", periodEnd = "" } = {}) {
+export async function buildCourseActivityCsvTemplate(
+  courseId,
+  { periodStart = "", periodEnd = "", activeIndicators } = {},
+) {
+  const columns = activityColumnsFor(activeIndicators);
   const enrollments = await Enrollment.find({ courseId, status: "active" })
     .select("studentId")
     .populate("studentId", "fullName matriculationNumber")
@@ -82,7 +86,8 @@ export async function buildCourseActivityCsvTemplate(courseId, { periodStart = "
     String(left.studentId?.fullName || "").localeCompare(String(right.studentId?.fullName || "")),
   );
 
-  const rows = [CSV_COLUMNS.join(",")];
+  const rows = [columns.join(",")];
+  const blankActivityCells = columns.slice(2, -2).map(() => "");
   for (const enrolment of enrollments) {
     const student = enrolment.studentId;
     if (!student?.matriculationNumber) {
@@ -92,11 +97,7 @@ export async function buildCourseActivityCsvTemplate(courseId, { periodStart = "
       [
         csvCell(student.matriculationNumber),
         csvCell(student.fullName),
-        "",
-        "",
-        "",
-        "",
-        "",
+        ...blankActivityCells,
         csvCell(periodStart),
         csvCell(periodEnd),
       ].join(","),
@@ -131,8 +132,10 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
   }
   assertCsvRowLimit(records);
 
+  const weights = await getActiveGlobalWeights(lecturerId);
+  const columns = activityColumnsFor(weights.activeIndicators);
   const headers = Object.keys(records[0]).map((header) => header.trim());
-  assertActivityHeaders(headers);
+  assertActivityHeaders(headers, columns);
 
   const defaultStart = missingOrDate(periodStart, "monitoringPeriodStart");
   const defaultEnd = missingOrDate(periodEnd, "monitoringPeriodEnd");
@@ -180,9 +183,15 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
     }
     const studentContext = { studentIdentifier: identifier, studentName: student.fullName };
 
-    const lastActivityAt = missingOrDate(rowValue(raw, "lastActivityAt"), "lastActivityAt");
-    const materialsAvailable = missingOrInteger(rowValue(raw, "materialsAvailable"), "materialsAvailable");
-    const materialsAccessed = missingOrInteger(rowValue(raw, "materialsAccessed"), "materialsAccessed");
+    const lastLearningActivityAt = missingOrDate(rowValue(raw, "lastLearningActivityAt"), "lastLearningActivityAt");
+    const learningItemsRequired = missingOrInteger(
+      rowValue(raw, "learningMaterialsAvailable"),
+      "learningMaterialsAvailable",
+    );
+    const learningItemsCompleted = missingOrInteger(
+      rowValue(raw, "learningMaterialsCompleted"),
+      "learningMaterialsCompleted",
+    );
     const assignmentsDue = missingOrInteger(rowValue(raw, "assignmentsDue"), "assignmentsDue");
     const assignmentsSubmitted = missingOrInteger(
       rowValue(raw, "assignmentsSubmitted"),
@@ -198,16 +207,16 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
     );
 
     const fieldErrors = [
-      lastActivityAt.error,
-      materialsAvailable.error,
-      materialsAccessed.error,
+      lastLearningActivityAt.error,
+      learningItemsRequired.error,
+      learningItemsCompleted.error,
       assignmentsDue.error,
       assignmentsSubmitted.error,
       periodStartValue.error,
       periodEndValue.error,
       validateCounts(
-        materialsAvailable.value,
-        materialsAccessed.value,
+        learningItemsRequired.value,
+        learningItemsCompleted.value,
         assignmentsDue.value,
         assignmentsSubmitted.value,
       ),
@@ -239,9 +248,9 @@ export async function previewCsv({ course, lecturerId, file, periodStart, period
       studentId: String(student._id),
       studentIdentifier: identifier,
       studentName: student.fullName,
-      lastActivityAt: lastActivityAt.value,
-      materialsAvailable: materialsAvailable.value,
-      materialsAccessed: materialsAccessed.value,
+      lastLearningActivityAt: lastLearningActivityAt.value,
+      learningItemsRequired: learningItemsRequired.value,
+      learningItemsCompleted: learningItemsCompleted.value,
       assignmentsDue: assignmentsDue.value,
       assignmentsSubmitted: assignmentsSubmitted.value,
       monitoringPeriodStart: periodStartValue.value,
@@ -300,9 +309,12 @@ export async function confirmImport({ course, lecturerId, importId }) {
     courseId: course._id,
     monitoringPeriodStart: row.monitoringPeriodStart,
     monitoringPeriodEnd: row.monitoringPeriodEnd,
-    lastActivityAt: row.lastActivityAt,
-    materialsAvailable: row.materialsAvailable,
-    materialsAccessed: row.materialsAccessed,
+    lastLearningActivityAt: row.lastLearningActivityAt,
+    learningItemsRequired: row.learningItemsRequired,
+    learningItemsCompleted: row.learningItemsCompleted,
+    lastActivityAt: row.lastLearningActivityAt,
+    materialsAvailable: row.learningItemsRequired,
+    materialsAccessed: row.learningItemsCompleted,
     assignmentsDue: row.assignmentsDue,
     assignmentsSubmitted: row.assignmentsSubmitted,
     importBatchId: batch._id,
@@ -391,5 +403,3 @@ function toPublicBatch(batch, { includePreview = false } = {}) {
     validRows: includePreview ? batch.validRows ?? [] : undefined,
   };
 }
-
-export { CSV_COLUMNS };

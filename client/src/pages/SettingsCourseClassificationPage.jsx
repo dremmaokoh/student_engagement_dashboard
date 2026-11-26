@@ -8,6 +8,7 @@ import ContentSkeleton, {
 } from "../components/common/ContentSkeleton.jsx";
 import { skeletonColumns } from "../lib/skeletonColumns.js";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
+import IndicatorInfo from "../components/design/IndicatorInfo.jsx";
 import ClassificationBadge from "../components/design/ClassificationBadge.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import { useApiAction } from "../hooks/useApiAction.js";
@@ -173,11 +174,11 @@ export default function SettingsCourseClassificationPage() {
       <form className="stack-form settings-course-config-form" onSubmit={onSubmit}>
         <section className="card settings-config-section">
           <h2>
-            <IndicatorGlyph indicatorKey="lastActivity" /> Last Recorded Login
+            <IndicatorGlyph indicatorKey="lastActivity" /> Learning Activity Recency <IndicatorInfo indicatorKey="lastActivity" />
           </h2>
           <p className="panel-desc">
-            Bands use calendar days between the student&apos;s last recorded login and the monitoring period end
-            (UTC). Missing timestamps yield Insufficient Data, not zero.
+            Bands use calendar days between the most recent qualifying learning activity and the monitoring period end
+            (UTC). Logging into the LMS does not count. A missing timestamp yields Insufficient Data, not zero.
           </p>
           <table className="data-table">
             <thead>
@@ -230,17 +231,19 @@ export default function SettingsCourseClassificationPage() {
 
         <section className="card settings-config-section settings-config-auto">
           <h2>
-            <IndicatorGlyph indicatorKey="materialAccess" /> Course material access
+            <IndicatorGlyph indicatorKey="materialAccess" /> Learning Material Completion{" "}
+            <IndicatorInfo indicatorKey="materialAccess" />
           </h2>
           <p className="panel-desc">
-            Automatic: (relevant materials accessed ÷ relevant materials available) × 100. Example: 8 of 10 → 80%. Not
-            Applicable when no materials were available during the period.
+            Automatic: (learning items completed ÷ learning items required) × 100. Example: 8 of 10 → 80%. Not Applicable
+            when no learning items were required. Opening or downloading a material is not completion.
           </p>
         </section>
 
         <section className="card settings-config-section settings-config-auto">
           <h2>
-            <IndicatorGlyph indicatorKey="assignmentSubmission" /> Assignment submission
+            <IndicatorGlyph indicatorKey="assignmentSubmission" /> Assignment Submission{" "}
+            <IndicatorInfo indicatorKey="assignmentSubmission" />
           </h2>
           <p className="panel-desc">
             Automatic: (eligible assignments submitted ÷ eligible assignments due) × 100. Example: 3 of 4 → 75%.

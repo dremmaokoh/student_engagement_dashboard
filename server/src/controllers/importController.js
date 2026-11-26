@@ -16,13 +16,19 @@ import {
   previewCourseStudentImport,
 } from "../services/import/courseStudentImportService.js";
 import { sendCsvDownload } from "../utils/csvDownload.js";
+import { getActiveGlobalWeights } from "../services/globalWeightsService.js";
 
 export async function downloadTemplate(req, res) {
   const periodStart = String(
     req.query?.periodStart || req.query?.monitoringPeriodStart || "",
   ).trim();
   const periodEnd = String(req.query?.periodEnd || req.query?.monitoringPeriodEnd || "").trim();
-  const body = await buildCourseActivityCsvTemplate(req.course._id, { periodStart, periodEnd });
+  const weights = await getActiveGlobalWeights(req.user.id);
+  const body = await buildCourseActivityCsvTemplate(req.course._id, {
+    periodStart,
+    periodEnd,
+    activeIndicators: weights.activeIndicators,
+  });
   const code = String(req.course.code || "course").replace(/[^\w.-]+/g, "_");
   sendCsvDownload(res, `${code}-activity-import-template.csv`, body);
 }

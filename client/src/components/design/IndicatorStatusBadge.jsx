@@ -7,7 +7,9 @@ export default function IndicatorStatusBadge({ status, indicatorKey }) {
       ? `badge badge-with-icon badge-calculated glyph-${indicatorKey}`
       : status === "NOT_APPLICABLE"
         ? "badge badge-with-icon badge-na"
-        : "badge badge-with-icon badge-insufficient";
+        : status === "DISABLED"
+          ? "badge badge-with-icon badge-excluded"
+          : "badge badge-with-icon badge-insufficient";
   const iconStatus = status === "CALCULATED" ? "CALCULATED" : status;
   return (
     <span className={className}>

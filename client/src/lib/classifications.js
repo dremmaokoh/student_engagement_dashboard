@@ -47,18 +47,33 @@ export function statusLabel(value) {
       CALCULATED: "Calculated",
       NOT_APPLICABLE: "Not Applicable",
       INSUFFICIENT_DATA: "Insufficient Data",
+      DISABLED: "Excluded",
     }[value] || value || "—"
   );
 }
 
-export const LAST_RECORDED_LOGIN_LABEL = "Last Recorded Login";
+export const LEARNING_ACTIVITY_RECENCY_LABEL = "Learning Activity Recency";
+export const LEARNING_MATERIAL_COMPLETION_LABEL = "Learning Material Completion";
+export const ASSIGNMENT_SUBMISSION_LABEL = "Assignment Submission";
+
+/** @deprecated Use LEARNING_ACTIVITY_RECENCY_LABEL */
+export const LAST_RECORDED_LOGIN_LABEL = LEARNING_ACTIVITY_RECENCY_LABEL;
+
+export const INDICATOR_HELP = {
+  lastActivity:
+    "Learning Activity Recency measures how recently a student performed a qualifying learning interaction within a course. Qualifying interactions include lecture viewing, instructional video watching, quiz attempts, discussion forum participation and course survey participation. The system uses the timestamp of the student's most recent qualifying activity. Simply logging into the LMS does not count.",
+  materialAccess:
+    "Measures the percentage of required learning materials or learning activities that the student has completed according to the LMS completion records. Simply opening, viewing or downloading a material does not mean it has been completed.",
+  assignmentSubmission:
+    "Measures the percentage of eligible assignments submitted by the student during the monitoring period.",
+};
 
 export function indicatorLabel(key) {
   return (
     {
-      lastActivity: LAST_RECORDED_LOGIN_LABEL,
-      materialAccess: "Course material access",
-      assignmentSubmission: "Assignment submission",
+      lastActivity: LEARNING_ACTIVITY_RECENCY_LABEL,
+      materialAccess: LEARNING_MATERIAL_COMPLETION_LABEL,
+      assignmentSubmission: ASSIGNMENT_SUBMISSION_LABEL,
     }[key] || key
   );
 }

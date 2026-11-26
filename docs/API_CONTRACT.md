@@ -112,9 +112,9 @@ Preview and confirm responses use the same batch summary: `totalCount`, `validCo
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/v1/settings/indicator-weights` | Active global weights (seeds default 30/30/40 on first access) |
-| POST | `/api/v1/settings/indicator-weights` | New global weight version (`weights` as % or fractions, optional `changeNote`) |
-| GET | `/api/v1/settings/indicator-weights/versions` | Global weight version history |
+| GET | `/api/v1/settings/indicator-weights` | Active global weights and indicator selection (seeds default 30/30/40, all three active, on first access) |
+| POST | `/api/v1/settings/indicator-weights` | New global configuration version. Body: `weights` (percent or fractions), optional `activeIndicators` (`lastActivity`, `materialAccess`, `assignmentSubmission` booleans), optional `changeNote`. At least two indicators must be active. Active weights must total 100%. Omitted `activeIndicators` keeps all three active. |
+| GET | `/api/v1/settings/indicator-weights/versions` | Global configuration version history, including each version's indicator selection |
 | GET | `/api/v1/settings/course-classification` | Course list with `configurationStatus` (`CONFIGURED` / `NOT_CONFIGURED`) |
 
 ### Per-course classification config
@@ -144,6 +144,6 @@ Default global weights: 30 / 30 / 40. Default last-activity bands: 0–3 = 100, 
 | POST | `/api/v1/courses/import-roster/preview` | Preview course/student/enrolment CSV |
 | POST | `/api/v1/courses/import-roster/confirm` | `{ importId }` commit roster import |
 
-Activity import template uses nine columns only (no event arrays): `studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd`.
+Activity import uses these columns when all three indicators are active (no event arrays and no activity-type column): `studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd`. The course template includes only the columns for indicators that are active in the lecturer's global configuration. Learning Activity Recency contributes `lastLearningActivityAt`. Learning Material Completion contributes `learningMaterialsAvailable` and `learningMaterialsCompleted`. Assignment Submission contributes `assignmentsDue` and `assignmentsSubmitted`. Student identity and the monitoring period are always included. `lastLearningActivityAt` is the timestamp of the student's most recent qualifying learning activity. The dashboard does not store which activity produced that timestamp. A missing value for an active indicator is Insufficient Data. Sample rows are synthetic, not LMS exports.
 
 Re-running generate creates a new run. The dashboard reads the latest run. Historical result documents keep the configuration snapshot used when they were generated. Enrolled students with no imported activity for the period are classified Insufficient Data, not zero.

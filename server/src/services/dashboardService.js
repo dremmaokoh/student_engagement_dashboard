@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import ClassificationResult from "../models/ClassificationResult.js";
+import ClassificationRun from "../models/ClassificationRun.js";
 import Course from "../models/Course.js";
 import Enrollment from "../models/Enrollment.js";
 import ImportBatch from "../models/ImportBatch.js";
@@ -7,6 +8,7 @@ import { withDashboardCache } from "../utils/dashboardCache.js";
 import { HttpError } from "../utils/httpError.js";
 import { parsePagination, paginated } from "../utils/pagination.js";
 import { toPublicCourse, toPublicStudent } from "../utils/toPublic.js";
+import { ensureCourseRunSummaries, runSummaryToAggregateRow } from "./classification/classificationRunStore.js";
 import {
   normalizePeriodDate,
   parseMonitoringPeriod,
@@ -23,17 +25,6 @@ function emptyCounts() {
     INACTIVE: 0,
     INSUFFICIENT_DATA: 0,
   };
-}
-
-function countResults(results) {
-  const counts = emptyCounts();
-  counts.total = results.length;
-  for (const result of results) {
-    if (counts[result.classification] !== undefined) {
-      counts[result.classification] += 1;
-    }
-  }
-  return counts;
 }
 
 function percent(part, total) {
@@ -83,31 +74,36 @@ function publicPeriod(period) {
 }
 
 async function latestRunForCourse(courseId, period) {
-  return ClassificationResult.findOne({
+  await ensureCourseRunSummaries(courseId);
+  return ClassificationRun.findOne({
     courseId,
     ...periodFilter(period.monitoringPeriodStart, period.monitoringPeriodEnd),
   })
     .sort({ generatedAt: -1 })
-    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName")
+    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName counts")
     .lean();
 }
 
 async function latestRunForCourseOverall(courseId) {
-  return ClassificationResult.findOne({ courseId })
+  await ensureCourseRunSummaries(courseId);
+  return ClassificationRun.findOne({ courseId })
     .sort({ generatedAt: -1 })
-    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName")
+    .select("runId generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd runName counts")
     .lean();
 }
 
-async function resultsForCourseRun(courseId, run) {
+async function resultsForAttentionQuery(courseId, run, { classificationFilter, focus }) {
   if (!run) {
     return [];
   }
-  // Only the fields used by the dashboard builders are loaded, as lean objects.
-  return ClassificationResult.find({ courseId, runId: run.runId })
-    .select(
-      "classification displayScore overallScore activitySnapshot.lastActivityAt generatedAt runId studentId",
-    )
+  const filter = { courseId, runId: run.runId };
+  if (classificationFilter && CLASSIFICATION_VALUES.includes(classificationFilter)) {
+    filter.classification = classificationFilter;
+  } else if (focus === "followup") {
+    filter.classification = { $in: ["INACTIVE", "REQUIRING_ATTENTION"] };
+  }
+  return ClassificationResult.find(filter)
+    .select("classification displayScore overallScore activitySnapshot generatedAt runId studentId")
     .populate("studentId", "fullName matriculationNumber email createdAt updatedAt")
     .lean();
 }
@@ -161,28 +157,9 @@ function periodBucketKey(periodStart, periodEnd) {
 }
 
 async function aggregateRunRowsForCourse(courseId) {
-  return ClassificationResult.aggregate([
-    { $match: { courseId } },
-    {
-      $group: {
-        _id: "$runId",
-        generatedAt: { $max: "$generatedAt" },
-        runName: { $first: "$runName" },
-        monitoringPeriodStart: { $first: "$monitoringPeriodStart" },
-        monitoringPeriodEnd: { $first: "$monitoringPeriodEnd" },
-        count: { $sum: 1 },
-        ACTIVE: { $sum: { $cond: [{ $eq: ["$classification", "ACTIVE"] }, 1, 0] } },
-        REQUIRING_ATTENTION: {
-          $sum: { $cond: [{ $eq: ["$classification", "REQUIRING_ATTENTION"] }, 1, 0] },
-        },
-        INACTIVE: { $sum: { $cond: [{ $eq: ["$classification", "INACTIVE"] }, 1, 0] } },
-        INSUFFICIENT_DATA: {
-          $sum: { $cond: [{ $eq: ["$classification", "INSUFFICIENT_DATA"] }, 1, 0] },
-        },
-      },
-    },
-    { $sort: { generatedAt: 1 } },
-  ]);
+  await ensureCourseRunSummaries(courseId);
+  const runs = await ClassificationRun.find({ courseId }).sort({ generatedAt: 1 }).lean();
+  return runs.map(runSummaryToAggregateRow);
 }
 
 function latestRunPerMonitoringPeriod(runRows) {
@@ -229,14 +206,12 @@ async function collectScopedDataUncached(lecturerId, query) {
         enrolledCount(course._id),
         importPromise,
       ]);
-      const results = await resultsForCourseRun(course._id, run);
       return {
         course,
         run,
         enrolled,
-        results,
         latestImport,
-        counts: countResults(results),
+        counts: run?.counts || emptyCounts(),
         hasClassification: Boolean(run),
       };
     }),
@@ -257,10 +232,9 @@ export async function getDashboardSummary(lecturerId, query) {
   let coursesWithRuns = 0;
 
   for (const bundle of courseBundles) {
-    for (const result of bundle.results) {
-      classifiedEnrolments += 1;
-      enrolmentCounts[result.classification] =
-        (enrolmentCounts[result.classification] || 0) + 1;
+    classifiedEnrolments += bundle.counts.total || 0;
+    for (const classification of ["ACTIVE", "REQUIRING_ATTENTION", "INACTIVE", "INSUFFICIENT_DATA"]) {
+      enrolmentCounts[classification] += bundle.counts[classification] || 0;
     }
     if (bundle.hasClassification) {
       coursesWithRuns += 1;
@@ -500,9 +474,14 @@ export async function getDashboardAttentionStudents(lecturerId, query) {
   const classificationFilter = String(query.classification || "").trim();
   const search = String(query.q || "").trim().toLowerCase();
 
+  const attentionByCourse = await Promise.all(
+    courseBundles.map((bundle) =>
+      resultsForAttentionQuery(bundle.course._id, bundle.run, { classificationFilter, focus }),
+    ),
+  );
   const rows = [];
-  for (const bundle of courseBundles) {
-    for (const result of bundle.results) {
+  for (const [index, bundle] of courseBundles.entries()) {
+    for (const result of attentionByCourse[index]) {
       if (classificationFilter && CLASSIFICATION_VALUES.includes(classificationFilter)) {
         if (result.classification !== classificationFilter) {
           continue;
@@ -529,7 +508,10 @@ export async function getDashboardAttentionStudents(lecturerId, query) {
         classification: result.classification,
         displayScore: result.displayScore,
         overallScore: result.overallScore,
-        lastActivityAt: result.activitySnapshot?.lastActivityAt || null,
+        lastLearningActivityAt:
+          result.activitySnapshot?.lastLearningActivityAt || result.activitySnapshot?.lastActivityAt || null,
+        lastActivityAt:
+          result.activitySnapshot?.lastLearningActivityAt || result.activitySnapshot?.lastActivityAt || null,
         generatedAt: result.generatedAt,
         runId: String(result.runId),
       });

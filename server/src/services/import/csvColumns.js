@@ -1,14 +1,39 @@
+import { DEFAULT_ACTIVE_INDICATORS } from "../scoring/defaults.js";
+
 export const CSV_COLUMNS = [
   "studentIdentifier",
   "studentName",
-  "lastActivityAt",
-  "materialsAvailable",
-  "materialsAccessed",
+  "lastLearningActivityAt",
+  "learningMaterialsAvailable",
+  "learningMaterialsCompleted",
   "assignmentsDue",
   "assignmentsSubmitted",
   "monitoringPeriodStart",
   "monitoringPeriodEnd",
 ];
+
+const INDICATOR_COLUMNS = {
+  lastActivity: ["lastLearningActivityAt"],
+  materialAccess: ["learningMaterialsAvailable", "learningMaterialsCompleted"],
+  assignmentSubmission: ["assignmentsDue", "assignmentsSubmitted"],
+};
+
+/** Columns for the lecturer's current selection. Missing flags mean the indicator is active. */
+export function activityColumnsFor(activeIndicators = DEFAULT_ACTIVE_INDICATORS) {
+  const active = activeIndicators || DEFAULT_ACTIVE_INDICATORS;
+  const columns = ["studentIdentifier", "studentName"];
+  if (active.lastActivity !== false) {
+    columns.push(...INDICATOR_COLUMNS.lastActivity);
+  }
+  if (active.materialAccess !== false) {
+    columns.push(...INDICATOR_COLUMNS.materialAccess);
+  }
+  if (active.assignmentSubmission !== false) {
+    columns.push(...INDICATOR_COLUMNS.assignmentSubmission);
+  }
+  columns.push("monitoringPeriodStart", "monitoringPeriodEnd");
+  return columns;
+}
 
 export const REQUIRED_HEADER = "studentIdentifier";
 
@@ -19,7 +44,11 @@ export function normaliseActivityHeaderKey(header) {
     .replace(/[\s_-]+/g, "");
 }
 
-const COLUMN_BY_KEY = new Map(CSV_COLUMNS.map((column) => [normaliseActivityHeaderKey(column), column]));
+const COLUMN_BY_KEY = new Map([
+  ...CSV_COLUMNS.map((column) => [normaliseActivityHeaderKey(column), column]),
+  ["learningitemsrequired", "learningMaterialsAvailable"],
+  ["learningitemscompleted", "learningMaterialsCompleted"],
+]);
 
 export function canonicaliseActivityHeader(header) {
   const key = normaliseActivityHeaderKey(header);

@@ -5,7 +5,7 @@ import {
   DEFAULT_LAST_ACTIVITY_BANDS,
   DEFAULT_WEIGHTS,
 } from "./scoring/defaults.js";
-import { normalizeWeights, validateBands, validateBoundaries } from "./scoring/configValidation.js";
+import { validateBands, validateBoundaries } from "./scoring/configValidation.js";
 import { ScoringValidationError } from "./scoring/scoringEngine.js";
 import { getActiveGlobalWeights } from "./globalWeightsService.js";
 
@@ -42,6 +42,7 @@ export async function mergeEffectiveConfig(courseConfig, globalWeights) {
   return {
     ...base,
     weights: globalWeights.weights,
+    activeIndicators: globalWeights.activeIndicators,
     globalWeightsVersion: globalWeights.version,
     globalWeightsId: globalWeights.id,
     configurationStatus: isLecturerConfiguredCourseConfig(courseConfig) ? "CONFIGURED" : "NOT_CONFIGURED",

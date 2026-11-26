@@ -49,7 +49,7 @@ test("login interval uses recorded evidence and falls back to snapshot dates", (
 
 test("applicable login band and explanation come from the saved configuration snapshot", () => {
   assert.deepEqual(findApplicableLoginBand(result), { minDays: 31, maxDays: 60, score: 80 });
-  assert.equal(loginEvidence(result), "Last login: 52 days before period end.");
+  assert.equal(loginEvidence(result), "Most recent qualifying learning activity: 52 days before period end.");
   assert.equal(loginBandExplanation(result), "Configured range: 31–60 days = 80");
 });
 
@@ -61,8 +61,8 @@ test("open-ended login bands render without a hard-coded range or /100", () => {
 
 test("ratio evidence uses saved activity counts and existing indicator scores", () => {
   assert.deepEqual(
-    ratioDetails(result, "materialAccess", "materialsAccessed", "materialsAvailable", "materials", "accessed"),
-    { evidence: "8 of 10 materials accessed.", calculation: "8 ÷ 10 × 100 = 80.0" },
+    ratioDetails(result, "materialAccess", "materialsAccessed", "materialsAvailable", "required learning items", "completed"),
+    { evidence: "8 of 10 required learning items completed.", calculation: "8 ÷ 10 × 100 = 80.0" },
   );
   assert.deepEqual(
     ratioDetails(result, "assignmentSubmission", "assignmentsSubmitted", "assignmentsDue", "assignments", "submitted"),
@@ -127,4 +127,16 @@ test("overall formula lists applicable contributions and the stored overall scor
     noneApplicable.indicators[key].status = "NOT_APPLICABLE";
   }
   assert.equal(overallContributionFormula(noneApplicable), null);
+
+  const excluded = structuredClone(result);
+  excluded.indicators.materialAccess = {
+    status: "DISABLED",
+    score: null,
+    reason: "This indicator is excluded from the active global configuration.",
+  };
+  excluded.effectiveWeights = { lastActivity: 0.4, materialAccess: 0, assignmentSubmission: 0.6 };
+  excluded.overallScore = 80 * 0.4 + 50 * 0.6;
+  assert.equal(applicableIndicatorKeys(excluded).includes("materialAccess"), false);
+  assert.equal(contributionFormula(excluded, "materialAccess"), null);
+  assert.equal(overallContributionFormula(excluded), "Overall Score = 32.0 + 30.0 = 62.0/100");
 });

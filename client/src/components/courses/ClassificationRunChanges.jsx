@@ -1,16 +1,18 @@
-import ContentSkeleton, { SkeletonPanel } from "../common/ContentSkeleton.jsx";
+import ContentSkeleton, { SkeletonLines } from "../common/ContentSkeleton.jsx";
 import { buildChangesSincePreviousCopy } from "../../lib/classificationRuns.js";
 
 export default function ClassificationRunChanges({ latestRun, previousRun, loading }) {
   if (loading) {
     return (
-      <ContentSkeleton loading label="Preparing run comparison…">
-        <SkeletonPanel
-          className="card course-overview-section course-overview-changes"
-          titleWidth="46%"
-          lines={["72%", "64%", "58%"]}
-        />
-      </ContentSkeleton>
+      <section className="card course-overview-section course-overview-changes" aria-labelledby="changes-heading">
+        <h2 id="changes-heading">Changes since previous classification</h2>
+        <p className="panel-desc">
+          Aggregate differences between your latest run and the prior saved run (not individual students).
+        </p>
+        <ContentSkeleton loading label="Preparing run comparison…">
+          <SkeletonLines rows={3} widths={["72%", "64%", "58%"]} />
+        </ContentSkeleton>
+      </section>
     );
   }
 

@@ -144,7 +144,7 @@ export default function GeneralOverviewTrendChart({
   const visibleSeries = useMemo(() => visibleTrendSeries(classificationFilter), [classificationFilter]);
 
   const geometry = useMemo(() => {
-    if (points.length < 2) {
+    if (points.length === 0) {
       return null;
     }
     const innerW = CHART_WIDTH - PAD.left - PAD.right;
@@ -156,12 +156,12 @@ export default function GeneralOverviewTrendChart({
       }
     }
     yMax = Math.max(yMax, 1);
-    const xStep = innerW / (points.length - 1);
+    const xStep = points.length === 1 ? 0 : innerW / (points.length - 1);
     const pointsBySeries = visibleSeries.map((series) => ({
       series,
       points: points.map((point, index) => {
         const value = Number(point.counts?.[series.key]) || 0;
-        const x = PAD.left + xStep * index;
+        const x = points.length === 1 ? PAD.left + innerW / 2 : PAD.left + xStep * index;
         const y = PAD.top + innerH - (value / yMax) * innerH;
         return { x, y, value, index };
       }),
@@ -176,7 +176,12 @@ export default function GeneralOverviewTrendChart({
   const resolvedPanelIndex = selectedIndex >= 0 ? selectedIndex : latestPeriodIndex;
   const activeIndex = hoverIndex !== null && hoverIndex >= 0 && hoverIndex < points.length ? hoverIndex : null;
   const activePoint = activeIndex !== null ? points[activeIndex] : null;
-  const activeX = activeIndex !== null && geometry ? PAD.left + geometry.xStep * activeIndex : null;
+  const activeX =
+    activeIndex !== null && geometry
+      ? points.length === 1
+        ? PAD.left + geometry.innerW / 2
+        : PAD.left + geometry.xStep * activeIndex
+      : null;
   const tooltipPlacement = activeX !== null ? trendTooltipPlacement(activeX / CHART_WIDTH) : "center";
   const selectedKey = classificationFilter !== ALL_CLASSIFICATIONS ? classificationFilter : null;
   const scope = Number(trend?.coursesInScope ?? coursesInScope ?? 0) || 0;
@@ -195,17 +200,6 @@ export default function GeneralOverviewTrendChart({
         No historical classification runs overlap this monitoring period. Generate classifications in your courses to
         build a trend.
       </p>
-    );
-  }
-
-  if (points.length === 1) {
-    return (
-      <figure className="classification-trend-chart">
-        <p className="classification-trend-single-note">
-          One monitoring period with saved runs in this selection. Add runs for other periods to see a line trend.
-        </p>
-        <PeriodSnapshot point={points[0]} coursesInScope={scope} />
-      </figure>
     );
   }
 
@@ -290,7 +284,7 @@ export default function GeneralOverviewTrendChart({
             {points.map((point, index) => (
               <text
                 key={periodLabel(point.monitoringPeriodStart, point.monitoringPeriodEnd)}
-                x={PAD.left + xStep * index}
+                x={points.length === 1 ? PAD.left + innerW / 2 : PAD.left + xStep * index}
                 y={CHART_HEIGHT - 8}
                 textAnchor="middle"
                 className={`classification-trend-axis classification-trend-x-label ${point.isSelectedPeriod ? "is-latest-run" : ""} ${index === latestPeriodIndex ? "is-latest-period" : ""} ${index === activeIndex ? "is-hovered" : ""}`}
@@ -390,6 +384,11 @@ export default function GeneralOverviewTrendChart({
       </div>
       {selectedIndex >= 0 ? (
         <p className="classification-trend-latest-legend-note muted">* Selected monitoring period in filters</p>
+      ) : null}
+      {points.length === 1 ? (
+        <p className="classification-trend-latest-legend-note muted">
+          One monitoring period is plotted. Another period connects these counts with a line.
+        </p>
       ) : null}
       <ul className="classification-trend-legend">
         {visibleSeries.map((series) => (

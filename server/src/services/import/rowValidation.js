@@ -1,3 +1,5 @@
+import { normalizePeriodDate } from "../classification/period.js";
+
 function blank(value) {
   return value === undefined || value === null || String(value).trim() === "";
 }
@@ -13,8 +15,6 @@ export function missingOrInteger(raw, field) {
   return { value: Number(text) };
 }
 
-import { normalizePeriodDate } from "../classification/period.js";
-
 export function missingOrDate(raw, field) {
   if (blank(raw)) {
     return { value: null };
@@ -26,9 +26,16 @@ export function missingOrDate(raw, field) {
   return { value: normalized };
 }
 
-export function validateCounts(materialsAvailable, materialsAccessed, assignmentsDue, assignmentsSubmitted) {
-  if (materialsAvailable !== null && materialsAccessed !== null && materialsAccessed > materialsAvailable) {
-    return { field: "materialsAccessed", reason: "Accessed materials cannot exceed available materials." };
+export function validateCounts(learningItemsRequired, learningItemsCompleted, assignmentsDue, assignmentsSubmitted) {
+  if (
+    learningItemsRequired !== null &&
+    learningItemsCompleted !== null &&
+    learningItemsCompleted > learningItemsRequired
+  ) {
+    return {
+      field: "learningMaterialsCompleted",
+      reason: "Completed learning items cannot exceed required learning items.",
+    };
   }
   if (assignmentsDue !== null && assignmentsSubmitted !== null && assignmentsSubmitted > assignmentsDue) {
     return { field: "assignmentsSubmitted", reason: "Submitted assignments cannot exceed assignments due." };

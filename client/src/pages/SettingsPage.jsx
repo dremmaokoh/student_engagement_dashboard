@@ -3,13 +3,38 @@ import { Link } from "react-router-dom";
 import ContentSkeleton, { SkeletonBar } from "../components/common/ContentSkeleton.jsx";
 import { skeletonColumns } from "../lib/skeletonColumns.js";
 import IndicatorGlyph from "../components/dashboard/IndicatorGlyph.jsx";
-import { LAST_RECORDED_LOGIN_LABEL } from "../lib/classifications.js";
-import { toPercentFraction, weightsTotalPercent } from "../lib/weights.js";
+import IndicatorInfo from "../components/design/IndicatorInfo.jsx";
+import { indicatorLabel } from "../lib/classifications.js";
+import { activeIndicatorCount, activeWeightsTotalPercent, toPercentFraction } from "../lib/weights.js";
 import { useApiAction } from "../hooks/useApiAction.js";
 import { apiRequest } from "../services/api.js";
 
+const INDICATOR_FIELDS = [
+  {
+    key: "lastActivity",
+    inputId: "weightLastActivity",
+    summary: "How recently the student performed a qualifying learning activity.",
+  },
+  {
+    key: "materialAccess",
+    inputId: "weightMaterial",
+    summary: "Share of required learning items completed in the LMS.",
+  },
+  {
+    key: "assignmentSubmission",
+    inputId: "weightAssignment",
+    summary: "Share of eligible assignments submitted during the monitoring period.",
+  },
+];
+
 function emptyWeightForm() {
-  return { lastActivity: 30, materialAccess: 30, assignmentSubmission: 40, changeNote: "" };
+  return {
+    lastActivity: 30,
+    materialAccess: 30,
+    assignmentSubmission: 40,
+    activeIndicators: { lastActivity: true, materialAccess: true, assignmentSubmission: true },
+    changeNote: "",
+  };
 }
 
 export default function SettingsPage() {
@@ -35,10 +60,16 @@ export default function SettingsPage() {
       ]);
       const active = weightResult.data.weights;
       setWeights(active);
+      const selection = active.activeIndicators || {};
       setWeightForm({
         lastActivity: toPercentFraction(active.weights.lastActivity),
         materialAccess: toPercentFraction(active.weights.materialAccess),
         assignmentSubmission: toPercentFraction(active.weights.assignmentSubmission),
+        activeIndicators: {
+          lastActivity: selection.lastActivity !== false,
+          materialAccess: selection.materialAccess !== false,
+          assignmentSubmission: selection.assignmentSubmission !== false,
+        },
         changeNote: "",
       });
       setCourses(courseResult.data.courses);
@@ -53,11 +84,13 @@ export default function SettingsPage() {
     load();
   }, []);
 
+  const activeCount = activeIndicatorCount(weightForm.activeIndicators);
   const weightTotal = useMemo(
-    () => weightsTotalPercent(weightForm.lastActivity, weightForm.materialAccess, weightForm.assignmentSubmission),
+    () => activeWeightsTotalPercent(weightForm, weightForm.activeIndicators),
     [weightForm],
   );
-  const weightsValid = weightTotal !== null && Math.abs(weightTotal - 100) < 0.01;
+  const selectionValid = activeCount >= 2;
+  const weightsValid = selectionValid && weightTotal !== null && Math.abs(weightTotal - 100) < 0.01;
 
   const filteredCourses = useMemo(() => {
     const q = courseFilter.trim().toLowerCase();
@@ -72,8 +105,12 @@ export default function SettingsPage() {
 
   async function onSaveWeights(event) {
     event.preventDefault();
+    if (!selectionValid) {
+      setWeightError("At least two indicators must remain active.");
+      return;
+    }
     if (!weightsValid) {
-      setWeightError("Weights must total exactly 100%.");
+      setWeightError("Active indicator weights must total exactly 100%.");
       return;
     }
     setSaving(true);
@@ -89,6 +126,7 @@ export default function SettingsPage() {
                 materialAccess: Number(weightForm.materialAccess),
                 assignmentSubmission: Number(weightForm.assignmentSubmission),
               },
+              activeIndicators: weightForm.activeIndicators,
               changeNote: weightForm.changeNote,
             },
           }),
@@ -118,9 +156,9 @@ export default function SettingsPage() {
       <section className="card settings-weights-card" aria-labelledby="weights-heading">
         <h2 id="weights-heading">Activity indicator weights</h2>
         <p className="panel-desc">
-          These three weights apply to every course. They control how much each indicator contributes to the overall
-          participation score. Not Applicable indicators are excluded and remaining weights are renormalised during
-          calculation (never treated as zero).
+          Choose two or three indicators for every course. Only active indicators are scored, and their weights must
+          total 100%. An excluded indicator is left out of the configuration. That is separate from Not Applicable and
+          from Insufficient Data, which apply only to indicators that are switched on.
         </p>
 
         {loading ? (
@@ -142,49 +180,63 @@ export default function SettingsPage() {
         ) : (
           <form className="settings-weights-form" onSubmit={onSaveWeights}>
             <div className="settings-weight-grid">
-              <label className="settings-weight-field" htmlFor="weightLastActivity">
-                <IndicatorGlyph indicatorKey="lastActivity" /> {LAST_RECORDED_LOGIN_LABEL}
-                <input
-                  id="weightLastActivity"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={weightForm.lastActivity}
-                  onChange={(event) => setWeightForm({ ...weightForm, lastActivity: event.target.value })}
-                  required
-                />
-              </label>
-              <label className="settings-weight-field" htmlFor="weightMaterial">
-                <IndicatorGlyph indicatorKey="materialAccess" /> Course material access
-                <input
-                  id="weightMaterial"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={weightForm.materialAccess}
-                  onChange={(event) => setWeightForm({ ...weightForm, materialAccess: event.target.value })}
-                  required
-                />
-              </label>
-              <label className="settings-weight-field" htmlFor="weightAssignment">
-                <IndicatorGlyph indicatorKey="assignmentSubmission" /> Assignment submission
-                <input
-                  id="weightAssignment"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={weightForm.assignmentSubmission}
-                  onChange={(event) => setWeightForm({ ...weightForm, assignmentSubmission: event.target.value })}
-                  required
-                />
-              </label>
+              {INDICATOR_FIELDS.map((field) => {
+                const active = weightForm.activeIndicators[field.key] !== false;
+                return (
+                  <div
+                    key={field.key}
+                    className={active ? "settings-weight-field" : "settings-weight-field is-excluded"}
+                  >
+                    <span className="settings-weight-heading">
+                      <IndicatorGlyph indicatorKey={field.key} />
+                      <span className="settings-weight-name">
+                        {indicatorLabel(field.key)}
+                        <IndicatorInfo indicatorKey={field.key} />
+                      </span>
+                    </span>
+                    <p className="settings-weight-summary">{field.summary}</p>
+                    <label className="settings-weight-toggle">
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={(event) =>
+                          setWeightForm({
+                            ...weightForm,
+                            activeIndicators: {
+                              ...weightForm.activeIndicators,
+                              [field.key]: event.target.checked,
+                            },
+                          })
+                        }
+                      />
+                      <span>{active ? "Active" : "Excluded"}</span>
+                    </label>
+                    <label htmlFor={field.inputId}>Weight (%)</label>
+                    <input
+                      id={field.inputId}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={weightForm[field.key]}
+                      disabled={!active}
+                      onChange={(event) => setWeightForm({ ...weightForm, [field.key]: event.target.value })}
+                      required={active}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
+            {!selectionValid ? (
+              <p className="form-error" role="alert">
+                At least two indicators must remain active.
+              </p>
+            ) : null}
+
             <p className={`settings-weight-total ${weightsValid ? "settings-weight-total-ok" : "settings-weight-total-bad"}`}>
-              Total: {weightTotal ?? "—"}% {weightsValid ? "" : "(must equal 100%)"}
+              Active indicator weight total: {weightTotal ?? "—"}% / 100%.
+              {selectionValid && !weightsValid ? " Active weights must total 100%." : ""}
             </p>
 
             <div className="settings-weights-footer">
@@ -216,8 +268,9 @@ export default function SettingsPage() {
         <details className="settings-weight-example">
           <summary>How the weighted score is calculated</summary>
           <p className="panel-desc">
-            Final score = (activity score × activity weight) + (material score × material weight) + (assignment score ×
-            assignment weight), using weights as decimals.
+            Final score = the sum of each active indicator score multiplied by its weight. Excluded indicators are
+            omitted. If an active indicator is Not Applicable, the remaining active weights are renormalised. An active
+            indicator with Insufficient Data blocks the final score.
           </p>
           <table className="data-table settings-example-table">
             <thead>
@@ -232,14 +285,14 @@ export default function SettingsPage() {
             <tbody>
               <tr>
                 <td className="col-serial">1</td>
-                <td>{LAST_RECORDED_LOGIN_LABEL}</td>
+                <td>{indicatorLabel("lastActivity")}</td>
                 <td>80</td>
                 <td>30%</td>
                 <td>24</td>
               </tr>
               <tr>
                 <td className="col-serial">2</td>
-                <td>Material access</td>
+                <td>{indicatorLabel("materialAccess")}</td>
                 <td>90</td>
                 <td>30%</td>
                 <td>27</td>

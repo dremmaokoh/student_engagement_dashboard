@@ -9,6 +9,8 @@ const requiredPaths = [
   "/auth/login",
   "/courses",
   "/courses/{courseId}/imports/preview",
+  "/settings/indicator-weights",
+  "/settings/indicator-weights/versions",
   "/courses/{courseId}/classification-config",
   "/courses/{courseId}/classifications/generate",
   "/courses/{courseId}/dashboard",

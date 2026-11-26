@@ -37,6 +37,9 @@ function dateLabel(value) {
 }
 
 function weightLabel(result, indicatorKey) {
+  if (result?.indicators?.[indicatorKey]?.status === "DISABLED") {
+    return "Excluded";
+  }
   const weight = result?.configuredWeights?.[indicatorKey];
   return weight === null || weight === undefined ? "—" : weightPercent(weight);
 }
@@ -74,10 +77,10 @@ function IndicatorEvidence({ result, indicatorKey, indicator }) {
         ? ratioDetails(
             result,
             "materialAccess",
-            "materialsAccessed",
-            "materialsAvailable",
-            "materials",
-            "accessed",
+            "learningItemsCompleted",
+            "learningItemsRequired",
+            "required learning items",
+            "completed",
           )
         : ratioDetails(
             result,
@@ -109,12 +112,13 @@ function CalculationExplanation({ result }) {
     <div className="result-calculation-body">
       <h4 className="result-calculation-title">Calculation method</h4>
       <p className="result-calculation-desc">
-        Only indicators marked Calculated are included. Their saved weights are normalised across the applicable
-        indicators for this run; the weighted score shown uses that normalised share. The overall score is the sum of
-        those weighted scores.
+        Only indicators that were active in the saved configuration and marked Calculated are included. Their weights
+        are normalised across those applicable indicators. The overall score is the sum of those weighted scores.
       </p>
       <p className="result-calculation-desc">
-        Not Applicable indicators are excluded. Insufficient Data prevents a final score from being calculated.
+        An excluded indicator was switched off in the global configuration and is not treated as zero, Not Applicable,
+        or Insufficient Data. Not Applicable means an active indicator did not apply to this period. Insufficient Data
+        on an active indicator prevents a final score.
       </p>
       {includedKeys.length ? (
         <div className="result-formula-block">
@@ -273,7 +277,9 @@ export default function CourseResultDetailPage() {
               <p className="result-inline-note">No overall score was calculated for this saved result.</p>
             ) : null}
             {result.noClassifiableActivity ? (
-              <p className="result-inline-note">No classifiable activity: all indicators are Not Applicable.</p>
+              <p className="result-inline-note">
+                No classifiable activity: every active indicator is Not Applicable.
+              </p>
             ) : null}
             <p className="result-config-note">
               Configuration v{result.configurationVersion} · Saved with this result; later setting changes do not alter
@@ -296,6 +302,7 @@ export default function CourseResultDetailPage() {
               <tbody>
                 {INDICATOR_KEYS.filter((key) => indicators[key]).map((key, index) => {
                   const indicator = indicators[key];
+                  const excluded = indicator.status === "DISABLED";
                   return (
                     <tr key={key}>
                       <td className="col-serial">{index + 1}</td>
@@ -305,9 +312,9 @@ export default function CourseResultDetailPage() {
                           {indicatorLabel(key)}
                         </span>
                       </th>
-                      <td>{formatScore(indicator.score)}</td>
-                      <td>{weightLabel(result, key)}</td>
-                      <td>{formatContribution(weightedScore(result, key))}</td>
+                      <td>{excluded ? "Excluded" : formatScore(indicator.score)}</td>
+                      <td>{excluded ? "Excluded" : weightLabel(result, key)}</td>
+                      <td>{excluded ? "Excluded" : formatContribution(weightedScore(result, key))}</td>
                     </tr>
                   );
                 })}
@@ -343,7 +350,8 @@ export default function CourseResultDetailPage() {
               return null;
             }
             const contribution = weightedScore(result, key);
-            const hasScore = indicator.score !== null && indicator.score !== undefined;
+            const excluded = indicator.status === "DISABLED";
+            const hasScore = !excluded && indicator.score !== null && indicator.score !== undefined;
             return (
               <article key={key} className={`indicator-card indicator-${key} result-accent-${key}`}>
                 <div className="result-card-header">
@@ -354,19 +362,19 @@ export default function CourseResultDetailPage() {
                 </div>
 
                 <div className="result-metric-primary">
-                  <span className="result-metric-value">{formatContribution(contribution)}</span>
-                  <span className="result-metric-label">Weighted Score</span>
+                  <span className="result-metric-value">{excluded ? "Excluded" : formatContribution(contribution)}</span>
+                  <span className="result-metric-label">{excluded ? "Not in this configuration" : "Weighted Score"}</span>
                 </div>
 
                 <div className="result-metric-secondary">
                   <span className="result-metric-label">Calculated Score</span>
                   <span className="result-metric-value">
-                    {hasScore ? formatContribution(indicator.score) : "—"}
+                    {excluded ? "Excluded" : hasScore ? formatContribution(indicator.score) : "—"}
                     {hasScore ? <span className="result-metric-unit">/100</span> : null}
                   </span>
                 </div>
 
-                <ScoreBar score={indicator.score} label={indicatorLabel(key)} tone={key} />
+                {excluded ? null : <ScoreBar score={indicator.score} label={indicatorLabel(key)} tone={key} />}
 
                 <dl className="indicator-weight-row">
                   <div>
@@ -387,10 +395,13 @@ export default function CourseResultDetailPage() {
         {activity ? (
           <dl className="health">
             <dt>{indicatorLabel("lastActivity")}</dt>
-            <dd>{dateLabel(activity.lastActivityAt)}</dd>
-            <dt>Materials accessed / available</dt>
             <dd>
-              {activity.materialsAccessed ?? "Missing"} / {activity.materialsAvailable ?? "Missing"}
+              {dateLabel(activity.lastLearningActivityAt || activity.lastActivityAt)}
+            </dd>
+            <dt>Learning materials completed / available</dt>
+            <dd>
+              {activity.learningItemsCompleted ?? activity.materialsAccessed ?? "Missing"} /{" "}
+              {activity.learningItemsRequired ?? activity.materialsAvailable ?? "Missing"}
             </dd>
             <dt>Assignments submitted / due</dt>
             <dd>

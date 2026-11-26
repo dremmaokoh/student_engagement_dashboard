@@ -229,7 +229,7 @@ Recorded 10 November 2026.
 
 Recorded 17 November 2026.
 
-- Activity template and parser accept **exactly nine columns**; removed event columns are rejected with HTTP 400.
+- The activity template includes columns only for indicators that are active in Settings. With all three active, the file has nine columns: identity, `lastLearningActivityAt`, `learningMaterialsAvailable`, `learningMaterialsCompleted`, assignment counts, and the monitoring period. A deactivated indicator's columns are omitted, and an upload that still contains them is rejected. Learning Activity Recency is the timestamp in `lastLearningActivityAt` only. Files that add `lastLearningActivityType` or the removed event columns are rejected with HTTP 400. Sample CSVs are synthetic.
 - `docs/sample-activity.csv` and `docs/sample-activity-import.csv` match the nine-column template.
 - `cd server && npm test -- --runInBand --forceExit tests/imports.test.js` → **5 passed** (template, event-column rejection, invalid counts, confirm/idempotent skip, unenrolled student).
 - `tests/classifications.test.js` → **passed** against the nine-column activity CSV.
@@ -281,7 +281,7 @@ Free Render web services sleep after roughly 15 minutes of inactivity. The first
 - The dashboard supports lecturer judgement. It does not diagnose inactivity, infer motivation, or predict failure.
 - Matriculation numbers are globally unique in this prototype.
 - Dates without a timezone are treated as UTC calendar dates.
-- Activity CSV uses exactly nine aggregate columns (PRD §32.2). Event-level columns are not accepted.
+- Activity CSV uses the aggregate columns for the active indicators (nine when all three are active; PRD §32.2). Event-level columns are not accepted.
 - Re-generating classifications creates a new run. Course Overview shows the latest run; Results / History opens earlier runs with their stored config snapshots.
 - Results CSV export is available from Results / History for a selected run and period.
 - Self-registration is enabled (`AUTH_REGISTER_ENABLED=true`) for the prototype.

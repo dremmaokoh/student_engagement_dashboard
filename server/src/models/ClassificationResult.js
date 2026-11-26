@@ -41,6 +41,8 @@ classificationResultSchema.index({
   generatedAt: -1,
 });
 classificationResultSchema.index({ courseId: 1, runId: 1 });
+classificationResultSchema.index({ courseId: 1, runId: 1, studentId: 1 });
+classificationResultSchema.index({ courseId: 1, runId: 1, classification: 1, overallScore: 1 });
 classificationResultSchema.index({ courseId: 1, generatedAt: -1 });
 
 const ClassificationResult =

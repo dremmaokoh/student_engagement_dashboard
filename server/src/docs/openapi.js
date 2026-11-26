@@ -29,6 +29,32 @@ export const openApiSpec = {
           message: { type: "string" },
         },
       },
+      GlobalIndicatorConfigurationInput: {
+        type: "object",
+        required: ["weights"],
+        properties: {
+          weights: {
+            type: "object",
+            description: "Percent values (30) or fractions (0.3). Only active indicators are summed.",
+            required: ["lastActivity", "materialAccess", "assignmentSubmission"],
+            properties: {
+              lastActivity: { type: "number", minimum: 0 },
+              materialAccess: { type: "number", minimum: 0 },
+              assignmentSubmission: { type: "number", minimum: 0 },
+            },
+          },
+          activeIndicators: {
+            type: "object",
+            description: "Omit to keep all three active. At least two must be true.",
+            properties: {
+              lastActivity: { type: "boolean" },
+              materialAccess: { type: "boolean" },
+              assignmentSubmission: { type: "boolean" },
+            },
+          },
+          changeNote: { type: "string", maxLength: 500 },
+        },
+      },
       User: {
         type: "object",
         properties: {
@@ -199,6 +225,17 @@ export const openApiSpec = {
         tags: ["Students"],
         security: [{ bearerAuth: [] }],
         summary: "Student directory",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" } },
+          { name: "page", in: "query", schema: { type: "integer" } },
+          { name: "limit", in: "query", schema: { type: "integer" } },
+          {
+            name: "availableForCourse",
+            in: "query",
+            schema: { type: "string" },
+            description: "When set, returns students the lecturer can still enrol in this course, one page at a time.",
+          },
+        ],
         responses: { 200: { description: "Paginated students" } },
       },
       post: {
@@ -315,7 +352,7 @@ export const openApiSpec = {
       get: {
         tags: ["Imports"],
         security: [{ bearerAuth: [] }],
-        summary: "Download the CSV template",
+        summary: "Download the activity CSV template for the active indicators",
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "text/csv" } },
       },
@@ -357,6 +394,43 @@ export const openApiSpec = {
           { name: "importId", in: "path", required: true, schema: { type: "string" } },
         ],
         responses: { 200: { description: "Import" } },
+      },
+    },
+    "/settings/indicator-weights": {
+      get: {
+        tags: ["Configuration"],
+        security: [{ bearerAuth: [] }],
+        summary: "Active global indicator selection and weights",
+        description:
+          "Seeds version 1 on first access: all three indicators active at 30%, 30% and 40%. Missing activeIndicators on an older version means all three are active.",
+        responses: { 200: { description: "Active global configuration" } },
+      },
+      post: {
+        tags: ["Configuration"],
+        security: [{ bearerAuth: [] }],
+        summary: "Save a new global indicator configuration version",
+        description:
+          "Does not overwrite earlier versions. At least two indicators must be active. The weights of active indicators must total 100%. Disabled indicator weights are stored but excluded from scoring.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/GlobalIndicatorConfigurationInput" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "New active version" },
+          400: { description: "Fewer than two active indicators, or active weights do not total 100%" },
+        },
+      },
+    },
+    "/settings/indicator-weights/versions": {
+      get: {
+        tags: ["Configuration"],
+        security: [{ bearerAuth: [] }],
+        summary: "Global indicator configuration history",
+        responses: { 200: { description: "Versions, newest first, including each version's activeIndicators" } },
       },
     },
     "/courses/{courseId}/classification-config": {
@@ -508,6 +582,12 @@ export const openApiSpec = {
           { name: "page", in: "query", schema: { type: "integer" } },
           { name: "limit", in: "query", schema: { type: "integer" } },
           { name: "runId", in: "query", schema: { type: "string" } },
+          {
+            name: "summary",
+            in: "query",
+            schema: { type: "string", enum: ["1"] },
+            description: "When 1, return run counts and the latest import without a page of student results.",
+          },
         ],
         responses: {
           200: {
@@ -527,7 +607,12 @@ export const openApiSpec = {
           { name: "periodStart", in: "query", required: true, schema: { type: "string", format: "date" } },
           { name: "periodEnd", in: "query", required: true, schema: { type: "string", format: "date" } },
         ],
-        responses: { 200: { description: "Immutable generate runs" } },
+        responses: {
+          200: {
+            description:
+              "Immutable generate runs, plus enrolledCount and attentionPreview for the latest run in the response.",
+          },
+        },
       },
     },
     "/courses/{courseId}/classification-results": {

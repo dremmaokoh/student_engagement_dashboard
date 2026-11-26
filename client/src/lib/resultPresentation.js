@@ -34,7 +34,9 @@ export function loginIntervalDays(result) {
     return Math.max(0, Number(storedDays));
   }
 
-  const loginDay = utcDayValue(result?.activitySnapshot?.lastActivityAt);
+  const loginDay = utcDayValue(
+    result?.activitySnapshot?.lastLearningActivityAt || result?.activitySnapshot?.lastActivityAt,
+  );
   const periodEndDay = utcDayValue(result?.monitoringPeriodEnd);
   if (loginDay === null || periodEndDay === null) {
     return null;
@@ -82,7 +84,7 @@ export function loginEvidence(result) {
   if (days === null) {
     return null;
   }
-  return `Last login: ${days} days before period end.`;
+  return `Most recent qualifying learning activity: ${days} days before period end.`;
 }
 
 export function loginBandExplanation(result) {

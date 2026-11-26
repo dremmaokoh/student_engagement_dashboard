@@ -127,7 +127,7 @@ export default function ClassificationTrendChart({
   const visibleSeries = useMemo(() => visibleTrendSeries(classificationFilter), [classificationFilter]);
 
   const geometry = useMemo(() => {
-    if (chronological.length < 2) {
+    if (chronological.length === 0) {
       return null;
     }
     const innerW = CHART_WIDTH - PAD.left - PAD.right;
@@ -139,12 +139,12 @@ export default function ClassificationTrendChart({
       }
     }
     yMax = Math.max(yMax, 1);
-    const xStep = innerW / (chronological.length - 1);
+    const xStep = chronological.length === 1 ? 0 : innerW / (chronological.length - 1);
 
     const pointsBySeries = visibleSeries.map((series) => {
       const points = chronological.map((run, index) => {
         const value = Number(run.counts?.[series.key]) || 0;
-        const x = PAD.left + xStep * index;
+        const x = chronological.length === 1 ? PAD.left + innerW / 2 : PAD.left + xStep * index;
         const y = PAD.top + innerH - (value / yMax) * innerH;
         return { x, y, value, runId: run.runId, index };
       });
@@ -159,7 +159,12 @@ export default function ClassificationTrendChart({
     latestIndex >= 0 ? latestIndex : chronological.length > 0 ? chronological.length - 1 : -1;
   const activeIndex = hoverIndex !== null && hoverIndex >= 0 && hoverIndex < chronological.length ? hoverIndex : null;
   const activeRun = activeIndex !== null ? chronological[activeIndex] : null;
-  const activeX = activeIndex !== null && geometry ? PAD.left + geometry.xStep * activeIndex : null;
+  const activeX =
+    activeIndex !== null && geometry
+      ? chronological.length === 1
+        ? PAD.left + geometry.innerW / 2
+        : PAD.left + geometry.xStep * activeIndex
+      : null;
   const tooltipPlacement = activeX !== null ? trendTooltipPlacement(activeX / CHART_WIDTH) : "center";
   const selectedKey = classificationFilter !== ALL_CLASSIFICATIONS ? classificationFilter : null;
 
@@ -176,19 +181,6 @@ export default function ClassificationTrendChart({
       <p className="classification-trend-empty">
         No classification runs yet. Generate classifications from the Monitoring tab to begin tracking trends here.
       </p>
-    );
-  }
-
-  if (chronological.length === 1) {
-    const run = chronological[0];
-    return (
-      <figure className="classification-trend-chart">
-        <p className="classification-trend-single-note">
-          One classification run saved for this course. Values below are from that run. A line trend appears after you
-          generate again.
-        </p>
-        <RunCountSnapshot run={run} courseCode={courseCode} interactive isLatest />
-      </figure>
     );
   }
 
@@ -273,7 +265,7 @@ export default function ClassificationTrendChart({
               />
             ) : null}
             {chronological.map((run, index) => {
-              const x = PAD.left + xStep * index;
+              const x = chronological.length === 1 ? PAD.left + innerW / 2 : PAD.left + xStep * index;
               return (
                 <text
                   key={run.runId}
@@ -377,6 +369,7 @@ export default function ClassificationTrendChart({
       {resolvedLatestIndex >= 0 ? (
         <p className="classification-trend-latest-legend-note muted">
           * Latest run ({runSequenceLabel(resolvedLatestIndex)}), oldest to newest left to right
+          {chronological.length === 1 ? ". Generate again to connect this run with a line." : ""}
         </p>
       ) : null}
       <ul className="classification-trend-legend">

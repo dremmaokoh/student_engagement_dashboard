@@ -10,6 +10,15 @@ export const DEFAULT_WEIGHTS = {
   assignmentSubmission: 0.4,
 };
 
+export const INDICATOR_KEY_LIST = ["lastActivity", "materialAccess", "assignmentSubmission"];
+
+/** All three indicators participate unless a saved global configuration says otherwise. */
+export const DEFAULT_ACTIVE_INDICATORS = {
+  lastActivity: true,
+  materialAccess: true,
+  assignmentSubmission: true,
+};
+
 export const DEFAULT_LAST_ACTIVITY_BANDS = [
   { minDays: 0, maxDays: 3, score: 100 },
   { minDays: 4, maxDays: 7, score: 80 },
@@ -27,6 +36,8 @@ export const STATUSES = {
   CALCULATED: "CALCULATED",
   NOT_APPLICABLE: "NOT_APPLICABLE",
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  /** Deliberately left out of the global configuration. Not a data gap and not Not Applicable. */
+  DISABLED: "DISABLED",
 };
 
 export const CLASSIFICATIONS = {

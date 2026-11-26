@@ -1,6 +1,7 @@
-export function parsePagination(query) {
+export function parsePagination(query, options = {}) {
+  const maxLimit = options.maxLimit ?? 100;
   const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
-  const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit, 10) || 10));
+  const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(query.limit, 10) || 10));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
 }

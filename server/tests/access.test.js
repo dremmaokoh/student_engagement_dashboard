@@ -89,7 +89,7 @@ describe("access control and dashboard filters", () => {
     const alphaMatric = alpha.body.data.student.matriculationNumber;
     const activityCsv = Buffer.from(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
         `${alphaMatric},Alpha Filter,2026-10-29,10,8,4,3,2026-10-01,2026-10-31`,
       ].join("\n"),
       "utf8",

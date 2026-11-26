@@ -722,7 +722,7 @@ export default function DashboardPage() {
                         <th>Student ID</th>
                         <th>Course</th>
                         <th>Engagement score</th>
-                        <th>Last Recorded Login</th>
+                        <th>Learning Activity Recency</th>
                         <th>Classification</th>
                         <th className="students-col-action">Action</th>
                       </tr>
@@ -746,7 +746,9 @@ export default function DashboardPage() {
                             <div className="course-name">{item.course?.name}</div>
                           </td>
                           <td data-label="Engagement score">{formatScore(item.displayScore)}</td>
-                          <td data-label="Last Recorded Login">{formatLastRecordedActivity(item.lastActivityAt)}</td>
+                          <td data-label="Learning Activity Recency">
+                            {formatLastRecordedActivity(item.lastLearningActivityAt || item.lastActivityAt)}
+                          </td>
                           <td data-label="Classification">
                             <ClassificationBadge classification={item.classification} />
                           </td>

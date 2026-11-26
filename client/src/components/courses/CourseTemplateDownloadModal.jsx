@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { indicatorLabel } from "../../lib/classifications.js";
 import { useApiAction } from "../../hooks/useApiAction.js";
-import { downloadAuthenticated } from "../../services/api.js";
+import { apiRequest, downloadAuthenticated } from "../../services/api.js";
+
+const TEMPLATE_FIELDS = [
+  { key: "lastActivity", detail: "last learning activity date" },
+  { key: "materialAccess", detail: "learning materials available and learning materials completed" },
+  { key: "assignmentSubmission", detail: "assignments due and assignments submitted" },
+];
 
 function isValidRange(start, end) {
   if (!start || !end) {
@@ -24,6 +31,7 @@ export default function CourseTemplateDownloadModal({
   const [periodEnd, setPeriodEnd] = useState(initialPeriodEnd);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [activeIndicators, setActiveIndicators] = useState(null);
 
   const rangeValid = useMemo(() => isValidRange(periodStart, periodEnd), [periodStart, periodEnd]);
 
@@ -45,8 +53,30 @@ export default function CourseTemplateDownloadModal({
       setPeriodStart(initialPeriodStart);
       setPeriodEnd(initialPeriodEnd);
       setError("");
+      setActiveIndicators(null);
     }
   }, [open, initialPeriodStart, initialPeriodEnd]);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    let cancelled = false;
+    apiRequest("/api/v1/settings/indicator-weights")
+      .then((result) => {
+        if (!cancelled) {
+          setActiveIndicators(result.data?.weights?.activeIndicators || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveIndicators(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   async function onDownload(event) {
     event.preventDefault();
@@ -89,9 +119,21 @@ export default function CourseTemplateDownloadModal({
           </button>
         </header>
         <p className="panel-desc">
-          Select the monitoring period for which you want to record student engagement activity. The selected period will
-          be included in the downloaded template.
+          Select the monitoring period for which you want to record student engagement activity. The file includes
+          columns only for indicators that are currently active in Settings.
         </p>
+        {activeIndicators ? (
+          <ul className="panel-desc">
+            {TEMPLATE_FIELDS.map((field) => {
+              const included = activeIndicators[field.key] !== false;
+              return (
+                <li key={field.key}>
+                  {indicatorLabel(field.key)}: {included ? field.detail : "excluded"}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         {rangeValid ? (
           <p className="course-template-period-preview muted">
             Selected range: <strong>{periodStart}</strong> to <strong>{periodEnd}</strong>

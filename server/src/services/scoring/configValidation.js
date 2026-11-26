@@ -1,27 +1,57 @@
 import { ScoringValidationError } from "./scoringEngine.js";
+import { DEFAULT_ACTIVE_INDICATORS, INDICATOR_KEY_LIST } from "./defaults.js";
 
-export function normalizeWeights(input) {
-  const lastActivity = Number(input?.lastActivity);
-  const materialAccess = Number(input?.materialAccess);
-  const assignmentSubmission = Number(input?.assignmentSubmission);
-  if ([lastActivity, materialAccess, assignmentSubmission].some((value) => Number.isNaN(value) || value < 0)) {
-    throw new ScoringValidationError("All weights must be non-negative numbers.");
+export function normalizeActiveIndicators(input) {
+  if (input == null) {
+    return { ...DEFAULT_ACTIVE_INDICATORS };
   }
-  const sum = lastActivity + materialAccess + assignmentSubmission;
-  const weights =
-    Math.abs(sum - 100) < 0.01
-      ? {
-          lastActivity: lastActivity / 100,
-          materialAccess: materialAccess / 100,
-          assignmentSubmission: assignmentSubmission / 100,
-        }
-      : { lastActivity, materialAccess, assignmentSubmission };
-  const normalisedSum =
-    weights.lastActivity + weights.materialAccess + weights.assignmentSubmission;
-  if (Math.abs(normalisedSum - 1) > 0.001) {
-    throw new ScoringValidationError("Weights must sum to 100% (or 1.0).");
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw new ScoringValidationError("activeIndicators must identify each indicator as active or excluded.");
+  }
+  const active = {};
+  for (const key of INDICATOR_KEY_LIST) {
+    if (typeof input[key] !== "boolean") {
+      throw new ScoringValidationError(`activeIndicators.${key} must be true or false.`);
+    }
+    active[key] = input[key];
+  }
+  const activeCount = INDICATOR_KEY_LIST.filter((key) => active[key]).length;
+  if (activeCount < 2) {
+    throw new ScoringValidationError("At least two indicators must remain active.");
+  }
+  return active;
+}
+
+export function normalizeWeights(input, activeIndicators = DEFAULT_ACTIVE_INDICATORS) {
+  const active = normalizeActiveIndicators(activeIndicators);
+  const raw = {};
+  for (const key of INDICATOR_KEY_LIST) {
+    const value = Number(input?.[key]);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new ScoringValidationError("All weights must be non-negative numbers.");
+    }
+    raw[key] = value;
+  }
+  const activeSum = INDICATOR_KEY_LIST.filter((key) => active[key]).reduce((sum, key) => sum + raw[key], 0);
+  const scale = Math.abs(activeSum - 100) < 0.01 ? 100 : 1;
+  const weights = {};
+  for (const key of INDICATOR_KEY_LIST) {
+    weights[key] = raw[key] / scale;
+  }
+  const normalisedActiveSum = INDICATOR_KEY_LIST.filter((key) => active[key]).reduce(
+    (sum, key) => sum + weights[key],
+    0,
+  );
+  if (Math.abs(normalisedActiveSum - 1) > 0.001) {
+    throw new ScoringValidationError("Active indicator weights must total 100%.");
   }
   return weights;
+}
+
+export function normalizeIndicatorConfiguration(input = {}) {
+  const activeIndicators = normalizeActiveIndicators(input.activeIndicators);
+  const weights = normalizeWeights(input.weights || input, activeIndicators);
+  return { weights, activeIndicators };
 }
 
 export function validateBands(bands) {

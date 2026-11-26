@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApiAction } from "../../hooks/useApiAction.js";
 import { displayImportValue, importCount, unwrapImportBatch } from "../../lib/importResponse.js";
-import { apiRequest, downloadAuthenticated } from "../../services/api.js";
+import { apiRequest } from "../../services/api.js";
 
 const MAX_CSV_BYTES = 5 * 1024 * 1024;
 const PREVIEW_ROW_LIMIT = 20;
@@ -35,7 +35,6 @@ export default function CourseActivityImportModal({
   open,
   onClose,
   courseId,
-  courseCode,
   periodStart,
   periodEnd,
   onImportConfirmed,
@@ -83,26 +82,6 @@ export default function CourseActivityImportModal({
     setPreview(null);
     setError("");
     setPhase(selected ? "selected" : "idle");
-  }
-
-  async function downloadTemplate() {
-    if (busyRef.current) {
-      return;
-    }
-    setError("");
-    try {
-      const params = new URLSearchParams({ periodStart, periodEnd });
-      await run(
-        () =>
-          downloadAuthenticated(
-            `/api/v1/courses/${courseId}/imports/template?${params.toString()}`,
-            `${courseCode || "course"}-activity-import-template.csv`,
-          ),
-        { success: "Activity template downloaded.", rethrow: true },
-      );
-    } catch (err) {
-      setError(err.message);
-    }
   }
 
   async function previewFile(event) {
@@ -236,14 +215,10 @@ export default function CourseActivityImportModal({
           </button>
         </header>
         <p className="panel-desc">
-          Upload LMS activity for enrolled students for {periodStart} to {periodEnd}. Missing cells stay missing and are
+          Upload a synthetic activity CSV for enrolled students for {periodStart} to {periodEnd}. Record the most recent
+          qualifying learning activity and LMS completion counts. Missing cells stay missing and are
           never stored as zero.
         </p>
-        <div className="course-monitoring-modal-actions">
-          <button type="button" className="secondary-btn" onClick={downloadTemplate} disabled={working}>
-            Download template
-          </button>
-        </div>
         <form className="stack-form" onSubmit={previewFile}>
           <label htmlFor="importCsvFile">CSV file</label>
           <input
@@ -294,8 +269,8 @@ export default function CourseActivityImportModal({
                       <th className="col-serial">S/N</th>
                       <th>Student ID</th>
                       <th>Student Name</th>
-                      <th>Last Recorded Activity</th>
-                      <th>Materials Accessed</th>
+                      <th>Learning Activity Recency</th>
+                      <th>Learning Materials Completed</th>
                       <th>Assignments Submitted</th>
                       <th>Validation Status</th>
                     </tr>
@@ -306,8 +281,8 @@ export default function CourseActivityImportModal({
                         <td className="col-serial">{index + 1}</td>
                         <td>{displayImportValue(row.studentIdentifier)}</td>
                         <td>{displayImportValue(row.studentName)}</td>
-                        <td>{formatImportDate(row.lastActivityAt)}</td>
-                        <td>{displayImportValue(row.materialsAccessed)}</td>
+                        <td>{formatImportDate(row.lastLearningActivityAt || row.lastActivityAt)}</td>
+                        <td>{displayImportValue(row.learningItemsCompleted ?? row.materialsAccessed)}</td>
                         <td>{displayImportValue(row.assignmentsSubmitted)}</td>
                         <td>Valid</td>
                       </tr>

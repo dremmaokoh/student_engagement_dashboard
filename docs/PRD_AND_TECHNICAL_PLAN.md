@@ -392,7 +392,7 @@ student-engagement-dashboard/
 2. **courses**: name, code, description, lecturerId, status, timestamps.
 3. **students**: fullName, matriculationNumber, optional email, timestamps. Keep profile independent of course.
 4. **enrollments**: studentId, courseId, status, enrolledAt, timestamps. Add compound uniqueness for student/course.
-5. **activityRecords**: studentId, courseId, monitoringPeriodStart/End, lastActivityAt, materialsAvailable, materialsAccessed, assignmentsDue, assignmentsSubmitted, importBatchId, sourceType, validation metadata, timestamps. Aggregate counts only for the prototype CSV path (Section 32.2).
+5. **activityRecords**: studentId, courseId, monitoringPeriodStart/End, lastLearningActivityAt (legacy alias lastActivityAt), learningItemsRequired, learningItemsCompleted (legacy aliases materialsAvailable and materialsAccessed), assignmentsDue, assignmentsSubmitted, importBatchId, sourceType, validation metadata, timestamps. Learning Activity Recency is the latest qualifying timestamp only; the record does not store an activity type. Aggregate counts only for the prototype CSV path (Section 32.2).
 6. **classificationConfigs**: courseId, version, isActive, weights, lastActivityBands, classificationBoundaries, createdBy, createdAt, changeNote. Versions are immutable.
 7. **classificationResults**: studentId, courseId, activityRecordId, monitoring period, indicator scores/statuses, configuredWeights, effectiveWeights, overallScore, classification, configurationId/version/snapshot, explanation, generatedAt.
 
@@ -703,9 +703,9 @@ The activity CSV must contain exactly nine columns:
 |---|---|---|
 | A | `studentIdentifier` | Unique student identifier. |
 | B | `studentName` | Student's full name. |
-| C | `lastActivityAt` | Date and time of the student's last recorded LMS activity. |
-| D | `materialsAvailable` | Number of relevant course materials made available during the monitoring period. |
-| E | `materialsAccessed` | Number of relevant materials accessed by the student. |
+| C | `lastLearningActivityAt` | Timestamp of the student's most recent qualifying learning activity. Qualifying interactions include lecture viewing, instructional video watching, quiz attempts, discussion forum participation and course survey participation. The dashboard stores this timestamp only and does not store which activity produced it. Login alone does not qualify. A missing timestamp is Insufficient Data, not zero. |
+| D | `learningMaterialsAvailable` | Learning materials available in the monitoring period. |
+| E | `learningMaterialsCompleted` | Learning materials with an explicit LMS completion status. |
 | F | `assignmentsDue` | Number of eligible assignments whose deadlines passed during the monitoring period. |
 | G | `assignmentsSubmitted` | Number of eligible assignments submitted by the student. |
 | H | `monitoringPeriodStart` | Start date of the monitoring period. |

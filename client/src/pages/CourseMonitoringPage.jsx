@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import ContentSkeleton, {
-  SkeletonBar,
-  SkeletonPageHeader,
-  SkeletonPanel,
-  SkeletonTable,
-} from "../components/common/ContentSkeleton.jsx";
+import ContentSkeleton from "../components/common/ContentSkeleton.jsx";
 import { skeletonColumns } from "../lib/skeletonColumns.js";
 import CourseActivityImportModal from "../components/courses/CourseActivityImportModal.jsx";
 import CourseConfigurationModal from "../components/courses/CourseConfigurationModal.jsx";
@@ -67,6 +62,7 @@ export default function CourseMonitoringPage() {
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [preparedPeriod, setPreparedPeriod] = useState(null);
   const isActiveRef = useRef(true);
+  const loadIdRef = useRef(0);
 
   const monitoringPath = `${location.pathname}${location.search}`;
   const returnState = returnNavigationState(monitoringPath, "Back to Monitoring");
@@ -125,6 +121,8 @@ export default function CourseMonitoringPage() {
   }
 
   async function load(periodOverride = null) {
+    const loadId = loadIdRef.current + 1;
+    loadIdRef.current = loadId;
     setLoading(true);
     setError("");
     setRoster((current) => ({ ...current, items: [] }));
@@ -133,8 +131,7 @@ export default function CourseMonitoringPage() {
       const dashParams = new URLSearchParams({
         periodStart: fallbackPeriod.periodStart,
         periodEnd: fallbackPeriod.periodEnd,
-        page: "1",
-        limit: "1",
+        summary: "1",
       });
       const [courseResult, dash] = await Promise.all([
         apiRequest(`/api/v1/courses/${courseId}`),
@@ -155,7 +152,7 @@ export default function CourseMonitoringPage() {
         rosterParams.set("classification", classification);
       }
       const enrolled = await apiRequest(`/api/v1/courses/${courseId}/students?${rosterParams.toString()}`);
-      if (!isActiveRef.current) {
+      if (!isActiveRef.current || loadId !== loadIdRef.current) {
         return;
       }
       setCourse(courseResult.data.course);
@@ -168,12 +165,12 @@ export default function CourseMonitoringPage() {
         totalPages: enrolled.data.totalPages,
       });
     } catch (err) {
-      if (!isActiveRef.current) {
+      if (!isActiveRef.current || loadId !== loadIdRef.current) {
         return;
       }
       setError(err.message);
     } finally {
-      if (isActiveRef.current) {
+      if (isActiveRef.current && loadId === loadIdRef.current) {
         setLoading(false);
       }
     }
@@ -299,61 +296,7 @@ export default function CourseMonitoringPage() {
     }
   }
 
-  if (loading && !course) {
-    return (
-      <main className="content course-monitoring-page">
-        <ContentSkeleton loading label="Preparing monitoring workspace…">
-          <SkeletonPageHeader />
-          <section className="card course-monitoring-toolbar-card" aria-hidden="true">
-            <div className="course-monitoring-toolbar">
-              <div className="course-monitoring-toolbar-primary">
-                <SkeletonBar className="skeleton-button" width="180px" />
-                <SkeletonBar className="skeleton-button" width="130px" />
-                <SkeletonBar className="skeleton-button" width="170px" />
-              </div>
-              <div className="course-monitoring-toolbar-secondary">
-                <SkeletonBar className="skeleton-button" width="150px" />
-                <SkeletonBar className="skeleton-button" width="180px" />
-              </div>
-            </div>
-          </section>
-          <SkeletonPanel
-            className="card course-monitoring-import-summary"
-            titleWidth="34%"
-            showTitle
-            lines={["72%", "58%"]}
-          >
-            <dl
-              className="activity-import-used-dl course-monitoring-import-dl course-monitoring-import-dl-compact"
-              aria-hidden="true"
-            >
-              {Array.from({ length: 7 }, (_, index) => (
-                <div key={index}>
-                  <dt>
-                    <SkeletonBar width="70%" height={10} />
-                  </dt>
-                  <dd>
-                    <SkeletonBar width="86%" height={14} />
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </SkeletonPanel>
-          <SkeletonPanel className="card course-students-roster-card" titleWidth="26%" showTitle>
-            <SkeletonTable
-              columns={skeletonColumns("roster")}
-              rows={6}
-              tableClassName="students-directory-table course-students-roster-table"
-              wrapClassName="table-card students-table-wrap"
-              showFooter
-            />
-          </SkeletonPanel>
-        </ContentSkeleton>
-      </main>
-    );
-  }
-
-  if (!course) {
+  if (!loading && !course) {
     return (
       <main className="content course-monitoring-page">
         <p className="form-error">{error || "Course not found."}</p>
@@ -374,7 +317,7 @@ export default function CourseMonitoringPage() {
             { label: "Overview", to: "/overview" },
             { label: "Courses", to: "/courses" },
             {
-              label: course.code,
+              label: course?.code || "Course",
               to: courseOverviewPath(courseId, appliedPeriod),
             },
             { label: "Monitoring" },
@@ -382,40 +325,34 @@ export default function CourseMonitoringPage() {
         />
         <h1>Monitoring</h1>
         <p className="lede course-monitoring-lede">
-          {course.code} — {course.name}. Manage enrolled students, import course activity and generate engagement
-          classifications.
+          {course
+            ? `${course.code} — ${course.name}. Manage enrolled students, import course activity and generate engagement classifications.`
+            : "Manage enrolled students, import course activity and generate engagement classifications."}
         </p>
-        <div className="course-monitoring-period-notes">
-          {loading ? (
-            <>
-              <SkeletonBar width="52%" />
-              <SkeletonBar width="44%" />
-            </>
-          ) : (
-            <>
+        {!loading ? (
+          <div className="course-monitoring-period-notes">
+            <p className="panel-desc course-monitoring-period-note">
+              {latestImport?.monitoringPeriodStart && latestImport?.monitoringPeriodEnd ? (
+                <>
+                  Latest imported activity period: {latestImport.monitoringPeriodStart} to{" "}
+                  {latestImport.monitoringPeriodEnd}.
+                </>
+              ) : (
+                <>No confirmed activity import yet. Choose a monitoring period when you download an activity template.</>
+              )}
+            </p>
+            {dashboard?.latestClassification ? (
               <p className="panel-desc course-monitoring-period-note">
-                {latestImport?.monitoringPeriodStart && latestImport?.monitoringPeriodEnd ? (
-                  <>
-                    Latest imported activity period: {latestImport.monitoringPeriodStart} to{" "}
-                    {latestImport.monitoringPeriodEnd}.
-                  </>
-                ) : (
-                  <>No confirmed activity import yet. Choose a monitoring period when you download an activity template.</>
-                )}
+                Latest generated classification period: {dashboard.latestClassification.monitoringPeriodStart || "—"} to{" "}
+                {dashboard.latestClassification.monitoringPeriodEnd || "—"}
+                {dashboard.latestClassification.generatedAt
+                  ? ` (generated ${new Date(dashboard.latestClassification.generatedAt).toLocaleString()})`
+                  : ""}
+                .
               </p>
-              {dashboard?.latestClassification ? (
-                <p className="panel-desc course-monitoring-period-note">
-                  Latest generated classification period: {dashboard.latestClassification.monitoringPeriodStart || "—"} to{" "}
-                  {dashboard.latestClassification.monitoringPeriodEnd || "—"}
-                  {dashboard.latestClassification.generatedAt
-                    ? ` (generated ${new Date(dashboard.latestClassification.generatedAt).toLocaleString()})`
-                    : ""}
-                  .
-                </p>
-              ) : null}
-            </>
-          )}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
       </header>
       <CourseTabs courseId={courseId} />
 
@@ -448,7 +385,7 @@ export default function CourseMonitoringPage() {
             </button>
           </div>
         </div>
-        {!canGenerate && generateDisabledReason ? (
+        {!loading && !canGenerate && generateDisabledReason ? (
           <p id="generate-classifications-hint" className="panel-desc course-monitoring-generate-hint" role="status">
             {generateDisabledReason}
           </p>
@@ -473,7 +410,7 @@ export default function CourseMonitoringPage() {
           <div>
             <h2>Roster</h2>
             <p className="panel-desc course-students-roster-count">
-              {loading ? "…" : `${roster.total} enrolled student${roster.total === 1 ? "" : "s"}`}
+              {loading ? "Loading enrolled students…" : `${roster.total} enrolled student${roster.total === 1 ? "" : "s"}`}
               {classification
                 ? ` · filtered by ${CLASSIFICATION_FILTERS.find((f) => f.id === classification)?.label || classification}`
                 : ""}
@@ -651,7 +588,7 @@ export default function CourseMonitoringPage() {
         open={templateModalOpen}
         onClose={() => setTemplateModalOpen(false)}
         courseId={courseId}
-        courseCode={course.code}
+        courseCode={course?.code}
         initialPeriodStart={templateModalPeriod.periodStart}
         initialPeriodEnd={templateModalPeriod.periodEnd}
         onPeriodConfirmed={({ periodStart, periodEnd }) => {
@@ -662,7 +599,6 @@ export default function CourseMonitoringPage() {
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         courseId={courseId}
-        courseCode={course.code}
         periodStart={importModalPeriod.periodStart}
         periodEnd={importModalPeriod.periodEnd}
         onImportConfirmed={(importMeta) => {

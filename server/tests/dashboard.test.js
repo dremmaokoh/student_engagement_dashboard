@@ -90,7 +90,7 @@ describe("cross-course dashboard", () => {
     const matric = student.body.data.student.matriculationNumber;
     const activityCsv = Buffer.from(
       [
-        "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+        "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
         `${matric},Dash Multi,2026-10-29,10,8,4,3,2026-10-01,2026-10-31`,
       ].join("\n"),
       "utf8",

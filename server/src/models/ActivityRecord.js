@@ -6,6 +6,10 @@ const activityRecordSchema = new mongoose.Schema(
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course", required: true },
     monitoringPeriodStart: { type: Date, required: true },
     monitoringPeriodEnd: { type: Date, required: true },
+    lastLearningActivityAt: { type: Date, default: null },
+    learningItemsRequired: { type: Number, default: null },
+    learningItemsCompleted: { type: Number, default: null },
+    /** Legacy fields retained so records imported before the indicator revision remain readable. */
     lastActivityAt: { type: Date, default: null },
     materialsAvailable: { type: Number, default: null },
     materialsAccessed: { type: Number, default: null },

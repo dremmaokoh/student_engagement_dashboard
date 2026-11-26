@@ -9,7 +9,67 @@ import { resolveRosterClassificationContext } from "./classification/classificat
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { toPublicCourse, toPublicEnrollment, toPublicStudent } from "../utils/toPublic.js";
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function listStudentsAvailableForCourse(query, lecturerId) {
+  const { page, limit, skip } = parsePagination(query);
+  if (!mongoose.isValidObjectId(query.availableForCourse)) {
+    throw new HttpError(404, "Course was not found.");
+  }
+  const course = await Course.findOne({
+    _id: query.availableForCourse,
+    lecturerId,
+    status: { $ne: "deleted" },
+  })
+    .select("_id")
+    .lean();
+  if (!course) {
+    throw new HttpError(404, "Course was not found.");
+  }
+
+  const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } }).select("_id").lean();
+  const courseIds = courses.map((entry) => entry._id);
+  const search = String(query.q || "").trim();
+  const pipeline = [
+    { $match: { courseId: { $in: courseIds }, status: "active" } },
+    { $group: { _id: "$studentId", courses: { $addToSet: "$courseId" } } },
+    { $match: { courses: { $nin: [course._id] } } },
+    { $lookup: { from: "students", localField: "_id", foreignField: "_id", as: "student" } },
+    { $unwind: "$student" },
+  ];
+  if (search) {
+    const regex = escapeRegex(search);
+    pipeline.push({
+      $match: {
+        $or: [
+          { "student.fullName": { $regex: regex, $options: "i" } },
+          { "student.matriculationNumber": { $regex: regex, $options: "i" } },
+          { "student.email": { $regex: regex, $options: "i" } },
+        ],
+      },
+    });
+  }
+  pipeline.push(
+    { $sort: { "student.fullName": 1, _id: 1 } },
+    {
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: "count" }],
+      },
+    },
+  );
+
+  const [pageResult] = await Enrollment.aggregate(pipeline).collation({ locale: "en", strength: 2 });
+  const items = (pageResult?.items || []).map((row) => toPublicStudent(row.student));
+  return paginated(items, pageResult?.total?.[0]?.count || 0, page, limit);
+}
+
 export async function listStudents(query, lecturerId) {
+  if (query.availableForCourse) {
+    return listStudentsAvailableForCourse(query, lecturerId);
+  }
   const { page, limit, skip } = parsePagination(query);
   const courses = await Course.find({ lecturerId, status: { $ne: "deleted" } })
     .select("_id code name")
@@ -126,13 +186,16 @@ function mapResultToCourseRow(course, result) {
     course,
     classification: result?.classification || null,
     displayScore: result?.displayScore ?? null,
-    lastActivityAt: snapshot.lastActivityAt || null,
+    lastLearningActivityAt: snapshot.lastLearningActivityAt || snapshot.lastActivityAt || null,
+    lastActivityAt: snapshot.lastLearningActivityAt || snapshot.lastActivityAt || null,
     generatedAt: result?.generatedAt || null,
     monitoringPeriodStart: result?.monitoringPeriodStart || null,
     monitoringPeriodEnd: result?.monitoringPeriodEnd || null,
     resultId: result ? String(result._id) : null,
-    materialsAccessed: snapshot.materialsAccessed ?? null,
-    materialsAvailable: snapshot.materialsAvailable ?? null,
+    learningItemsCompleted: snapshot.learningItemsCompleted ?? snapshot.materialsAccessed ?? null,
+    learningItemsRequired: snapshot.learningItemsRequired ?? snapshot.materialsAvailable ?? null,
+    materialsAccessed: snapshot.learningItemsCompleted ?? snapshot.materialsAccessed ?? null,
+    materialsAvailable: snapshot.learningItemsRequired ?? snapshot.materialsAvailable ?? null,
     assignmentsSubmitted: snapshot.assignmentsSubmitted ?? null,
     assignmentsDue: snapshot.assignmentsDue ?? null,
   };
@@ -266,83 +329,102 @@ export async function updateStudent(studentId, input) {
 export async function listCourseStudents(courseId, query) {
   const { page, limit, skip } = parsePagination(query);
   const status = query.status === "withdrawn" ? "withdrawn" : query.status === "all" ? null : "active";
-  const filter = { courseId };
+  const courseObjectId = courseId instanceof mongoose.Types.ObjectId ? courseId : new mongoose.Types.ObjectId(String(courseId));
+  const filter = { courseId: courseObjectId };
   if (status) {
     filter.status = status;
   }
 
-  const enrollments = await Enrollment.find(filter)
-    .sort({ enrolledAt: -1 })
-    .select("studentId courseId status enrolledAt")
-    .populate("studentId", "fullName matriculationNumber email createdAt updatedAt")
-    .lean();
-  let items = enrollments.filter((row) => row.studentId).map((row) => toPublicEnrollment(row, row.studentId));
-
-  const q = String(query.q || "").trim().toLowerCase();
-  if (q) {
-    items = items.filter(
-      (item) =>
-        String(item.student?.fullName || "")
-          .toLowerCase()
-          .includes(q) ||
-        String(item.student?.matriculationNumber || "")
-          .toLowerCase()
-          .includes(q),
-    );
+  const rosterContext = await resolveRosterClassificationContext(courseObjectId, query);
+  const wanted = query.classification ? String(query.classification).toUpperCase() : "";
+  if (wanted && !rosterContext.runId) {
+    return paginated([], 0, page, limit);
   }
 
-  const studentIds = items.map((item) => item.studentId);
-  const latestByStudent = new Map();
-  const rosterContext = await resolveRosterClassificationContext(courseId, query);
-  if (rosterContext.runId && studentIds.length) {
-    const results = await ClassificationResult.find({
-      courseId,
-      runId: rosterContext.runId,
-      studentId: { $in: studentIds },
-    })
-      .sort({ generatedAt: -1 })
-      .select("studentId classification displayScore activitySnapshot")
-      .lean();
-    for (const result of results) {
-      const key = String(result.studentId);
-      if (!latestByStudent.has(key)) {
-        latestByStudent.set(key, result);
-      }
-    }
-  }
+  const search = String(query.q || "").trim();
+  const sortBy = String(query.sortBy || "fullName");
+  const sortField =
+    sortBy === "overallScore"
+      ? "scoreSort"
+      : sortBy === "classification"
+        ? "result.classification"
+        : sortBy === "matriculationNumber"
+          ? "student.matriculationNumber"
+          : "student.fullName";
+  const sortDirection = sortBy === "overallScore" ? -1 : 1;
 
-  let enriched = items.map((item) => {
-    const result = latestByStudent.get(item.studentId);
+  const pipeline = [
+    { $match: filter },
+    { $lookup: { from: "students", localField: "studentId", foreignField: "_id", as: "student" } },
+    { $unwind: "$student" },
+  ];
+  if (search) {
+    const regex = escapeRegex(search);
+    pipeline.push({
+      $match: {
+        $or: [
+          { "student.fullName": { $regex: regex, $options: "i" } },
+          { "student.matriculationNumber": { $regex: regex, $options: "i" } },
+        ],
+      },
+    });
+  }
+  if (rosterContext.runId) {
+    pipeline.push({
+    $lookup: {
+      from: "classificationresults",
+      let: { studentId: "$studentId" },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ["$courseId", courseObjectId] },
+                { $eq: ["$runId", rosterContext.runId] },
+                { $eq: ["$studentId", "$$studentId"] },
+              ],
+            },
+          },
+        },
+        { $sort: { generatedAt: -1 } },
+        { $limit: 1 },
+        { $project: { classification: 1, displayScore: 1, activitySnapshot: 1 } },
+      ],
+      as: "result",
+    },
+  });
+    pipeline.push({ $unwind: { path: "$result", preserveNullAndEmptyArrays: true } });
+  }
+  if (wanted) {
+    pipeline.push({ $match: { "result.classification": wanted } });
+  }
+  if (sortBy === "overallScore") {
+    pipeline.push({ $addFields: { scoreSort: { $ifNull: ["$result.displayScore", -1] } } });
+  }
+  pipeline.push(
+    { $sort: { [sortField]: sortDirection, _id: 1 } },
+    {
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: "count" }],
+      },
+    },
+  );
+
+  const [pageResult] = await Enrollment.aggregate(pipeline).collation({ locale: "en", strength: 2 });
+  const items = (pageResult?.items || []).map((row) => {
+    const result = row.result;
+    const activityAt = result?.activitySnapshot?.lastLearningActivityAt || result?.activitySnapshot?.lastActivityAt || null;
     return {
-      ...item,
+      ...toPublicEnrollment(row, row.student),
       classification: result?.classification || null,
       displayScore: result?.displayScore ?? null,
-      lastActivityAt: result?.activitySnapshot?.lastActivityAt || null,
+      lastLearningActivityAt: activityAt,
+      lastActivityAt: activityAt,
       resultId: result ? String(result._id) : null,
     };
   });
-
-  if (query.classification) {
-    const wanted = String(query.classification).toUpperCase();
-    enriched = enriched.filter((item) => item.classification === wanted);
-  }
-
-  const sortBy = String(query.sortBy || "fullName");
-  enriched.sort((left, right) => {
-    if (sortBy === "classification") {
-      return String(left.classification || "").localeCompare(String(right.classification || ""));
-    }
-    if (sortBy === "overallScore") {
-      return (right.displayScore ?? -1) - (left.displayScore ?? -1);
-    }
-    if (sortBy === "matriculationNumber") {
-      return String(left.student?.matriculationNumber || "").localeCompare(String(right.student?.matriculationNumber || ""));
-    }
-    return String(left.student?.fullName || "").localeCompare(String(right.student?.fullName || ""));
-  });
-
-  const total = enriched.length;
-  return paginated(enriched.slice(skip, skip + limit), total, page, limit);
+  return paginated(items, pageResult?.total?.[0]?.count || 0, page, limit);
 }
 
 export async function enrolStudent(courseId, studentId) {

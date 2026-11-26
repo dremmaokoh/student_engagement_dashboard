@@ -6,7 +6,7 @@ import { assertCsvRowLimit, chunk } from "../../utils/csvLimits.js";
 import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
 import { HttpError } from "../../utils/httpError.js";
 import { createPreviewStore } from "../../utils/previewStore.js";
-import { toPublicCourse, toPublicStudent } from "../../utils/toPublic.js";
+import { toPublicCourse } from "../../utils/toPublic.js";
 import { normalizeStudentEmail } from "../../validators/studentCommunicationValidators.js";
 
 export const COURSE_STUDENT_REQUIRED_COLUMNS = ["studentName", "studentIdentifier", "studentEmail"];
@@ -191,7 +191,7 @@ export async function previewCourseStudentImport(lecturerId, courseId, buffer, f
       uniqueEmails: new Set(validRows.map((row) => row.studentEmail)).size,
     },
     validRows: validRows.slice(0, 25),
-    invalidRows,
+    invalidRows: invalidRows.slice(0, 25).map(({ rowNumber, errors }) => ({ rowNumber, errors })),
   };
 }
 
@@ -263,7 +263,6 @@ export async function confirmCourseStudentImport(lecturerId, courseId, importId)
     throw new HttpError(409, `Import could not be completed: ${err.message}. Preview the file again.`);
   }
 
-  const students = createdStudents.map(toPublicStudent);
   invalidateDashboardCache(lecturerId);
 
   return {
@@ -271,11 +270,10 @@ export async function confirmCourseStudentImport(lecturerId, courseId, importId)
     filename: preview.filename,
     course: toPublicCourse(course),
     counts: {
-      studentsCreated: students.length,
-      enrolmentsCreated: students.length,
+      studentsCreated: createdStudents.length,
+      enrolmentsCreated: createdStudents.length,
       validRows: preview.validRows.length,
       invalidRows: preview.invalidRows.length,
     },
-    students,
   };
 }

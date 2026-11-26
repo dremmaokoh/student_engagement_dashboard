@@ -53,7 +53,7 @@ async function seed() {
 
   const file = csv(
     [
-      "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+      "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
       `${high.body.data.student.matriculationNumber},High Activity,2026-10-29,10,8,4,3,2026-10-01,2026-10-31`,
     ].join("\n"),
   );
@@ -217,13 +217,19 @@ describe("classification generation and dashboard", () => {
       .send({ runName: "October Run", monitoringPeriodStart: "2026-10-01", monitoringPeriodEnd: "2026-10-31" });
     const original = first.body.data.items.find((item) => item.studentId === highId);
     expect(original.configurationSnapshot.weights.assignmentSubmission).toBe(0.4);
+    expect(original.configurationSnapshot.activeIndicators).toEqual({
+      lastActivity: true,
+      materialAccess: true,
+      assignmentSubmission: true,
+    });
 
     await request(app)
       .post("/api/v1/settings/indicator-weights")
       .set(auth)
       .send({
-        weights: { lastActivity: 10, materialAccess: 10, assignmentSubmission: 80 },
-        changeNote: "Assignment-heavy",
+        weights: { lastActivity: 40, materialAccess: 30, assignmentSubmission: 60 },
+        activeIndicators: { lastActivity: true, materialAccess: false, assignmentSubmission: true },
+        changeNote: "Two indicators",
       });
 
     const second = await request(app)
@@ -232,13 +238,17 @@ describe("classification generation and dashboard", () => {
       .send({ runName: "October Run", monitoringPeriodStart: "2026-10-01", monitoringPeriodEnd: "2026-10-31" });
     const newer = second.body.data.items.find((item) => item.studentId === highId);
     expect(newer.configurationSnapshot.globalWeightsVersion).toBe(2);
-    expect(newer.configurationSnapshot.weights.assignmentSubmission).toBe(0.8);
+    expect(newer.configurationSnapshot.weights.assignmentSubmission).toBeCloseTo(0.6);
+    expect(newer.configurationSnapshot.activeIndicators.materialAccess).toBe(false);
+    expect(newer.indicators.materialAccess.status).toBe("DISABLED");
 
     const historic = await request(app)
       .get(`/api/v1/courses/${courseId}/classification-results/${original.id}`)
       .set(auth);
     expect(historic.body.data.result.configurationVersion).toBe(1);
     expect(historic.body.data.result.configurationSnapshot.weights.assignmentSubmission).toBe(0.4);
+    expect(historic.body.data.result.configurationSnapshot.activeIndicators.materialAccess).toBe(true);
+    expect(historic.body.data.result.indicators.materialAccess.status).not.toBe("DISABLED");
     expect(historic.body.data.result.overallScore).toBe(84);
   });
 
@@ -286,7 +296,7 @@ describe("classification generation and dashboard", () => {
     const matricPrefix = `P9${Date.now().toString().slice(-6)}`;
     const studentIds = [];
     const csvRows = [
-      "studentIdentifier,studentName,lastActivityAt,materialsAvailable,materialsAccessed,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
+      "studentIdentifier,studentName,lastLearningActivityAt,learningMaterialsAvailable,learningMaterialsCompleted,assignmentsDue,assignmentsSubmitted,monitoringPeriodStart,monitoringPeriodEnd",
     ];
     for (let index = 0; index < 9; index += 1) {
       const matric = `${matricPrefix}${index}`;

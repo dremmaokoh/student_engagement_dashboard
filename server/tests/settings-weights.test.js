@@ -72,6 +72,11 @@ describe("global indicator weights", () => {
 
     const active = await request(app).get("/api/v1/settings/indicator-weights").set(auth);
     expect(active.body.data.weights.version).toBe(2);
+    expect(active.body.data.weights.activeIndicators).toEqual({
+      lastActivity: true,
+      materialAccess: true,
+      assignmentSubmission: true,
+    });
   }, 120000);
 
   test("invalid global weights are rejected", async () => {
@@ -84,5 +89,75 @@ describe("global indicator weights", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ weights: { lastActivity: 30, materialAccess: 30, assignmentSubmission: 30 } });
     expect(response.status).toBe(400);
+  }, 120000);
+
+  test("two active indicators can be saved and earlier versions stay unchanged", async () => {
+    if (!mongoReady) {
+      return;
+    }
+    const { token } = await seed();
+    const auth = { Authorization: `Bearer ${token}` };
+    const seeded = await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+    expect(seeded.body.data.weights.activeIndicators.materialAccess).toBe(true);
+
+    const saved = await request(app)
+      .post("/api/v1/settings/indicator-weights")
+      .set(auth)
+      .send({
+        weights: { lastActivity: 40, materialAccess: 30, assignmentSubmission: 60 },
+        activeIndicators: { lastActivity: true, materialAccess: false, assignmentSubmission: true },
+        changeNote: "Drop material completion",
+      });
+    expect(saved.status).toBe(201);
+    expect(saved.body.data.weights.version).toBe(2);
+    expect(saved.body.data.weights.activeIndicators.materialAccess).toBe(false);
+    expect(saved.body.data.weights.weights.lastActivity).toBeCloseTo(0.4);
+    expect(saved.body.data.weights.weights.assignmentSubmission).toBeCloseTo(0.6);
+
+    const history = await request(app).get("/api/v1/settings/indicator-weights/versions").set(auth);
+    expect(history.status).toBe(200);
+    const versions = history.body.data.versions || history.body.data.items || history.body.data;
+    const list = Array.isArray(versions) ? versions : versions.versions;
+    const original = list.find((row) => row.version === 1);
+    const latest = list.find((row) => row.version === 2);
+    expect(original.activeIndicators.materialAccess).toBe(true);
+    expect(original.weights.materialAccess).toBeCloseTo(0.3);
+    expect(latest.activeIndicators).toEqual({
+      lastActivity: true,
+      materialAccess: false,
+      assignmentSubmission: true,
+    });
+  }, 120000);
+
+  test("fewer than two active indicators is rejected", async () => {
+    if (!mongoReady) {
+      return;
+    }
+    const { token } = await seed();
+    const auth = { Authorization: `Bearer ${token}` };
+    await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+
+    const one = await request(app)
+      .post("/api/v1/settings/indicator-weights")
+      .set(auth)
+      .send({
+        weights: { lastActivity: 100, materialAccess: 0, assignmentSubmission: 0 },
+        activeIndicators: { lastActivity: true, materialAccess: false, assignmentSubmission: false },
+      });
+    expect(one.status).toBe(400);
+    expect(one.body.message || one.body.error || "").toMatch(/at least two indicators/i);
+
+    const none = await request(app)
+      .post("/api/v1/settings/indicator-weights")
+      .set(auth)
+      .send({
+        weights: { lastActivity: 0, materialAccess: 0, assignmentSubmission: 0 },
+        activeIndicators: { lastActivity: false, materialAccess: false, assignmentSubmission: false },
+      });
+    expect(none.status).toBe(400);
+    expect(none.body.message || none.body.error || "").toMatch(/at least two indicators/i);
+
+    const stillDefault = await request(app).get("/api/v1/settings/indicator-weights").set(auth);
+    expect(stillDefault.body.data.weights.version).toBe(1);
   }, 120000);
 });

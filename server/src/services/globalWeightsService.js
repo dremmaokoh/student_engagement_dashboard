@@ -1,14 +1,20 @@
 import LecturerIndicatorWeights from "../models/LecturerIndicatorWeights.js";
-import { DEFAULT_WEIGHTS } from "./scoring/defaults.js";
-import { normalizeWeights } from "./scoring/configValidation.js";
+import { DEFAULT_ACTIVE_INDICATORS, DEFAULT_WEIGHTS } from "./scoring/defaults.js";
+import { normalizeIndicatorConfiguration } from "./scoring/configValidation.js";
 
 function toPublicWeights(row) {
+  const stored = row.activeIndicators || {};
   return {
     id: String(row._id),
     lecturerId: String(row.lecturerId),
     version: row.version,
     isActive: row.isActive,
     weights: row.weights,
+    activeIndicators: {
+      lastActivity: stored.lastActivity !== false,
+      materialAccess: stored.materialAccess !== false,
+      assignmentSubmission: stored.assignmentSubmission !== false,
+    },
     changeNote: row.changeNote,
     createdAt: row.createdAt,
     createdBy: String(row.createdBy),
@@ -29,6 +35,7 @@ export async function getActiveGlobalWeights(lecturerId) {
         version: 1,
         isActive: true,
         weights: DEFAULT_WEIGHTS,
+        activeIndicators: DEFAULT_ACTIVE_INDICATORS,
         createdBy: lecturerId,
         changeNote: "Default configuration",
       });
@@ -43,7 +50,10 @@ export async function listGlobalWeightVersions(lecturerId) {
 }
 
 export async function createGlobalWeightsVersion(lecturerId, input) {
-  const weights = normalizeWeights(input.weights || DEFAULT_WEIGHTS);
+  const { weights, activeIndicators } = normalizeIndicatorConfiguration({
+    weights: input.weights || DEFAULT_WEIGHTS,
+    activeIndicators: input.activeIndicators,
+  });
   const latest = await LecturerIndicatorWeights.findOne({ lecturerId }).sort({ version: -1 });
   const version = latest ? latest.version + 1 : 1;
 
@@ -54,6 +64,7 @@ export async function createGlobalWeightsVersion(lecturerId, input) {
     version,
     isActive: true,
     weights,
+    activeIndicators,
     createdBy: lecturerId,
     changeNote: String(input.changeNote || "").trim(),
   });

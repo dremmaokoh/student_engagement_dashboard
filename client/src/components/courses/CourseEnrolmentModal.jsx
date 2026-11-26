@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LoadingState from "../common/LoadingState.jsx";
 import {
-  filterEnrollableStudents,
   selectionStateForStudents,
   setStudentsSelected,
   toggleStudentSelection,
@@ -9,28 +8,7 @@ import {
 import { useApiAction } from "../../hooks/useApiAction.js";
 import { apiRequest, downloadAuthenticated } from "../../services/api.js";
 
-const STUDENT_PAGE_SIZE = 50;
-
-/** The API caps pages at 50, so load every page rather than silently missing students. */
-async function fetchAllPages(basePath) {
-  const joiner = basePath.includes("?") ? "&" : "?";
-  const first = await apiRequest(`${basePath}${joiner}limit=${STUDENT_PAGE_SIZE}&page=1`);
-  const totalPages = Math.max(1, Number(first.data?.totalPages) || 1);
-  const items = [...(first.data?.items || [])];
-
-  if (totalPages > 1) {
-    const remainingPages = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) =>
-        apiRequest(`${basePath}${joiner}limit=${STUDENT_PAGE_SIZE}&page=${index + 2}`),
-      ),
-    );
-    for (const page of remainingPages) {
-      items.push(...(page.data?.items || []));
-    }
-  }
-
-  return items;
-}
+const PICKER_PAGE_SIZE = 25;
 
 export default function CourseEnrolmentModal({ open, onClose, courseId, courseCode, onEnrolled }) {
   const run = useApiAction();
@@ -38,7 +16,8 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
   const selectAllRef = useRef(null);
   const [mode, setMode] = useState("existing");
   const [directory, setDirectory] = useState([]);
-  const [enrolledIds, setEnrolledIds] = useState(new Set());
+  const [availableTotal, setAvailableTotal] = useState(0);
+  const [searching, setSearching] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [studentSearch, setStudentSearch] = useState("");
   const [newName, setNewName] = useState("");
@@ -68,22 +47,25 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
       return;
     }
     let cancelled = false;
-    async function load() {
-      setLoading(true);
+    setLoading(true);
+    setSearching(true);
+    const handle = setTimeout(async () => {
       setError("");
       try {
-        const [students, enrolled] = await Promise.all([
-          fetchAllPages("/api/v1/students"),
-          fetchAllPages(`/api/v1/courses/${courseId}/students`),
-        ]);
+        const params = new URLSearchParams({
+          availableForCourse: courseId,
+          limit: String(PICKER_PAGE_SIZE),
+          page: "1",
+        });
+        if (studentSearch.trim()) {
+          params.set("q", studentSearch.trim());
+        }
+        const response = await apiRequest(`/api/v1/students?${params.toString()}`);
         if (cancelled) {
           return;
         }
-        const ids = new Set(
-          (enrolled || []).map((row) => row.student?.id || row.studentId).filter(Boolean),
-        );
-        setDirectory(students || []);
-        setEnrolledIds(ids);
+        setDirectory(response.data?.items || []);
+        setAvailableTotal(response.data?.total ?? 0);
       } catch (err) {
         if (!cancelled) {
           setError(err.message);
@@ -91,14 +73,15 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
       } finally {
         if (!cancelled) {
           setLoading(false);
+          setSearching(false);
         }
       }
-    }
-    load();
+    }, studentSearch.trim() ? 300 : 0);
     return () => {
       cancelled = true;
+      clearTimeout(handle);
     };
-  }, [open, courseId]);
+  }, [open, courseId, studentSearch]);
 
   useEffect(() => {
     if (!open) {
@@ -114,14 +97,7 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
     }
   }, [open]);
 
-  const enrolableStudents = useMemo(
-    () => filterEnrollableStudents(directory, enrolledIds, ""),
-    [directory, enrolledIds],
-  );
-  const visibleStudents = useMemo(
-    () => filterEnrollableStudents(directory, enrolledIds, studentSearch),
-    [directory, enrolledIds, studentSearch],
-  );
+  const visibleStudents = directory;
   const visibleSelectionState = useMemo(
     () => selectionStateForStudents(selectedIds, visibleStudents),
     [selectedIds, visibleStudents],
@@ -135,7 +111,7 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
 
   async function onEnrolExisting(event) {
     event.preventDefault();
-    const studentIds = [...selectedIds].filter((studentId) => !enrolledIds.has(studentId));
+    const studentIds = [...selectedIds];
     if (studentIds.length === 0) {
       return;
     }
@@ -238,7 +214,11 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
           }),
         { rethrow: true },
       );
-      setImportPreview(response.data);
+      const preview = response.data?.data;
+      if (!preview?.summary || !Array.isArray(preview.validRows)) {
+        throw new Error("The import preview could not be read. Upload the file again.");
+      }
+      setImportPreview(preview);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -333,7 +313,13 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
           <form className="stack-form" onSubmit={onEnrolExisting}>
             <div className="course-enrolment-picker-head">
               <label htmlFor="enrolStudentSearch">Search existing students</label>
-              <span className="muted">{enrolableStudents.length} available to enrol</span>
+              <span className="muted">
+                {searching
+                  ? "Searching…"
+                  : studentSearch.trim()
+                    ? `${availableTotal} match${availableTotal === 1 ? "" : "es"}`
+                    : `${availableTotal} available to enrol`}
+              </span>
             </div>
             <input
               id="enrolStudentSearch"
@@ -353,7 +339,7 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
                   disabled={visibleStudents.length === 0}
                 />
                 <span>
-                  {studentSearch.trim() ? "Select all matching students" : "Select all available students"}
+                  {availableTotal > visibleStudents.length ? "Select shown students" : "Select all available students"}
                 </span>
               </label>
               <button
@@ -370,6 +356,11 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
                 ? "No students selected."
                 : `${selectedIds.size} student${selectedIds.size === 1 ? "" : "s"} selected.`}
             </p>
+            {availableTotal > visibleStudents.length ? (
+              <p className="muted">
+                Showing {visibleStudents.length} of {availableTotal}. Search to narrow the list.
+              </p>
+            ) : null}
             <div className="course-enrolment-student-list" role="group" aria-label="Available students">
               {visibleStudents.length === 0 ? (
                 <p className="muted">No available students match this search.</p>
@@ -459,14 +450,14 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
                   />
                 </label>
               </div>
-              {importPreview ? (
+              {importPreview?.summary ? (
                 <div className="course-enrolment-import-preview" role="status">
                   <p>
                     Preview: {importPreview.summary.validRows} valid · {importPreview.summary.invalidRows} invalid ·{" "}
                     {importPreview.summary.uniqueStudentIds} unique student IDs ·{" "}
                     {importPreview.summary.uniqueEmails} unique emails
                   </p>
-                  {importPreview.validRows.length ? (
+                  {importPreview.validRows?.length ? (
                     <ul className="course-enrolment-valid-list">
                       {importPreview.validRows.slice(0, 5).map((row) => (
                         <li key={row.rowNumber}>
@@ -474,19 +465,23 @@ export default function CourseEnrolmentModal({ open, onClose, courseId, courseCo
                         </li>
                       ))}
                       {importPreview.summary.validRows > importPreview.validRows.length ? (
-                        <li className="muted">+{importPreview.summary.validRows - importPreview.validRows.length} more rows</li>
+                        <li className="muted">
+                          +{importPreview.summary.validRows - importPreview.validRows.length} more rows
+                        </li>
                       ) : null}
                     </ul>
                   ) : null}
-                  {importPreview.invalidRows.length ? (
+                  {importPreview.invalidRows?.length ? (
                     <ul className="course-enrolment-import-errors">
                       {importPreview.invalidRows.slice(0, 10).map((row) => (
                         <li key={row.rowNumber}>
-                          Row {row.rowNumber}: {row.errors.join(" ")}
+                          Row {row.rowNumber}: {(row.errors || []).join(" ")}
                         </li>
                       ))}
-                      {importPreview.invalidRows.length > 10 ? (
-                        <li className="muted">+{importPreview.invalidRows.length - 10} more errors</li>
+                      {importPreview.summary.invalidRows > importPreview.invalidRows.length ? (
+                        <li className="muted">
+                          +{importPreview.summary.invalidRows - importPreview.invalidRows.length} more errors
+                        </li>
                       ) : null}
                     </ul>
                   ) : null}

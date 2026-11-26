@@ -1,13 +1,13 @@
 import IndicatorGlyph from "../dashboard/IndicatorGlyph.jsx";
-import { LAST_RECORDED_LOGIN_LABEL } from "../../lib/classifications.js";
+import { indicatorLabel } from "../../lib/classifications.js";
 import ClassificationBadge from "./ClassificationBadge.jsx";
 import IndicatorStatusBadge from "./IndicatorStatusBadge.jsx";
 
 const CLASSIFICATIONS = ["ACTIVE", "REQUIRING_ATTENTION", "INACTIVE", "INSUFFICIENT_DATA"];
 const INDICATORS = [
-  { key: "lastActivity", label: LAST_RECORDED_LOGIN_LABEL },
-  { key: "materialAccess", label: "Course material access" },
-  { key: "assignmentSubmission", label: "Assignment submission" },
+  { key: "lastActivity", label: indicatorLabel("lastActivity") },
+  { key: "materialAccess", label: indicatorLabel("materialAccess") },
+  { key: "assignmentSubmission", label: indicatorLabel("assignmentSubmission") },
 ];
 
 export default function DesignLegend() {

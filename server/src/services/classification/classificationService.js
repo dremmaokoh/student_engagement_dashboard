@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import ActivityRecord from "../../models/ActivityRecord.js";
 import ClassificationResult from "../../models/ClassificationResult.js";
+import ClassificationRun from "../../models/ClassificationRun.js";
 import Enrollment from "../../models/Enrollment.js";
 import ImportBatch from "../../models/ImportBatch.js";
 import { invalidateDashboardCache } from "../../utils/dashboardCache.js";
@@ -12,6 +13,12 @@ import { CLASSIFICATIONS, STATUSES } from "../scoring/defaults.js";
 import { generateStudentClassification } from "../scoring/scoringEngine.js";
 import { logClassificationError, logClassificationStage } from "../../utils/classificationLogger.js";
 import { normalizePeriodDate, parseMonitoringPeriod, periodFilter, periodsEquivalent } from "./period.js";
+import {
+  ensureCourseRunSummaries,
+  runSummaryToAggregateRow,
+  saveRunSummary,
+  summarizeClassificationDocs,
+} from "./classificationRunStore.js";
 
 const RUN_NAME_MAX_LENGTH = 120;
 
@@ -83,26 +90,43 @@ function snapshotActivity(record) {
   if (!record) {
     return null;
   }
+  const activityAt = record.lastLearningActivityAt || record.lastActivityAt || null;
+  const itemsRequired = record.learningItemsRequired ?? record.materialsAvailable ?? null;
+  const itemsCompleted = record.learningItemsCompleted ?? record.materialsAccessed ?? null;
   return {
-    lastActivityAt: record.lastActivityAt,
-    materialsAvailable: record.materialsAvailable,
-    materialsAccessed: record.materialsAccessed,
+    lastLearningActivityAt: activityAt,
+    learningItemsRequired: itemsRequired,
+    learningItemsCompleted: itemsCompleted,
+    lastActivityAt: activityAt,
+    materialsAvailable: itemsRequired,
+    materialsAccessed: itemsCompleted,
     assignmentsDue: record.assignmentsDue,
     assignmentsSubmitted: record.assignmentsSubmitted,
   };
 }
 
-function missingActivityClassification() {
+function missingActivityClassification(activeIndicators = null) {
   const insufficient = {
     status: STATUSES.INSUFFICIENT_DATA,
     score: null,
     reason: "No imported activity record exists for this student and monitoring period.",
   };
+  const excluded = {
+    status: STATUSES.DISABLED,
+    score: null,
+    reason: "This indicator is excluded from the active global configuration.",
+  };
+  const active = activeIndicators || {
+    lastActivity: true,
+    materialAccess: true,
+    assignmentSubmission: true,
+  };
+  const indicatorFor = (key) => (active[key] === false ? excluded : insufficient);
   return {
     indicators: {
-      lastActivity: insufficient,
-      materialAccess: insufficient,
-      assignmentSubmission: insufficient,
+      lastActivity: indicatorFor("lastActivity"),
+      materialAccess: indicatorFor("materialAccess"),
+      assignmentSubmission: indicatorFor("assignmentSubmission"),
     },
     overallScore: null,
     displayScore: null,
@@ -112,6 +136,24 @@ function missingActivityClassification() {
     effectiveWeights: { lastActivity: 0, materialAccess: 0, assignmentSubmission: 0 },
     reason: "No imported LMS activity is available for this enrolled student in the selected period.",
   };
+}
+
+function publicActivitySnapshot(snapshot) {
+  if (!snapshot || !Object.prototype.hasOwnProperty.call(snapshot, "lastLearningActivityType")) {
+    return snapshot;
+  }
+  const rest = { ...snapshot };
+  delete rest.lastLearningActivityType;
+  return rest;
+}
+
+function publicIndicators(indicators) {
+  if (!indicators?.lastActivity || !Object.prototype.hasOwnProperty.call(indicators.lastActivity, "activityType")) {
+    return indicators;
+  }
+  const lastActivity = { ...indicators.lastActivity };
+  delete lastActivity.activityType;
+  return { ...indicators, lastActivity };
 }
 
 function toPublicResult(result, student) {
@@ -124,7 +166,7 @@ function toPublicResult(result, student) {
     runId: String(result.runId),
     monitoringPeriodStart: result.monitoringPeriodStart,
     monitoringPeriodEnd: result.monitoringPeriodEnd,
-    indicators: result.indicators,
+    indicators: publicIndicators(result.indicators),
     configuredWeights: result.configuredWeights,
     effectiveWeights: result.effectiveWeights,
     overallScore: result.overallScore,
@@ -135,7 +177,7 @@ function toPublicResult(result, student) {
     configurationVersion: result.configurationVersion,
     configurationSnapshot: result.configurationSnapshot,
     explanation: result.explanation,
-    activitySnapshot: result.activitySnapshot,
+    activitySnapshot: publicActivitySnapshot(result.activitySnapshot),
     generatedAt: result.generatedAt,
     student: populatedStudent ? toPublicStudent(populatedStudent) : undefined,
   };
@@ -188,16 +230,22 @@ function parseClassificationFilter(value) {
 }
 
 async function latestRun(courseId, period) {
-  return ClassificationResult.findOne({ courseId, ...periodFilter(period.monitoringPeriodStart, period.monitoringPeriodEnd) })
+  await ensureCourseRunSummaries(courseId);
+  return ClassificationRun.findOne({
+    courseId,
+    ...periodFilter(period.monitoringPeriodStart, period.monitoringPeriodEnd),
+  })
     .sort({ generatedAt: -1 })
-    .select("runId runName generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd");
+    .select("runId runName generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd")
+    .lean();
 }
 
 async function runById(courseId, period, runId) {
+  await ensureCourseRunSummaries(courseId);
   if (runId && mongoose.isValidObjectId(runId)) {
-    const byRun = await ClassificationResult.findOne({ courseId, runId }).select(
-      "runId runName generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd",
-    );
+    const byRun = await ClassificationRun.findOne({ courseId, runId })
+      .select("runId runName generatedAt configurationVersion monitoringPeriodStart monitoringPeriodEnd")
+      .lean();
     if (byRun) {
       return byRun;
     }
@@ -215,9 +263,11 @@ export async function resolveRosterClassificationContext(courseId, query = {}) {
     }
   }
 
-  const latest = await ClassificationResult.findOne({ courseId })
+  await ensureCourseRunSummaries(courseId);
+  const latest = await ClassificationRun.findOne({ courseId })
     .sort({ generatedAt: -1 })
-    .select("runId monitoringPeriodStart monitoringPeriodEnd generatedAt");
+    .select("runId monitoringPeriodStart monitoringPeriodEnd generatedAt")
+    .lean();
 
   if (!latest) {
     return { runId: null, period: requestedPeriod, periodAdjusted: false };
@@ -232,12 +282,13 @@ export async function resolveRosterClassificationContext(courseId, query = {}) {
       latest.monitoringPeriodEnd,
     )
   ) {
-    const exact = await ClassificationResult.findOne({
+    const exact = await ClassificationRun.findOne({
       courseId,
       ...periodFilter(requestedPeriod.monitoringPeriodStart, requestedPeriod.monitoringPeriodEnd),
     })
       .sort({ generatedAt: -1 })
-      .select("runId");
+      .select("runId")
+      .lean();
     return {
       runId: exact?.runId || latest.runId,
       period: requestedPeriod,
@@ -246,12 +297,13 @@ export async function resolveRosterClassificationContext(courseId, query = {}) {
   }
 
   if (requestedPeriod) {
-    const exact = await ClassificationResult.findOne({
+    const exact = await ClassificationRun.findOne({
       courseId,
       ...periodFilter(requestedPeriod.monitoringPeriodStart, requestedPeriod.monitoringPeriodEnd),
     })
       .sort({ generatedAt: -1 })
-      .select("runId monitoringPeriodStart monitoringPeriodEnd");
+      .select("runId monitoringPeriodStart monitoringPeriodEnd")
+      .lean();
     if (exact) {
       return {
         runId: exact.runId,
@@ -391,7 +443,7 @@ export async function generateClassifications({ course, lecturerId, input }) {
     const activity = activityByStudent.get(String(student._id));
     const scored = activity
       ? generateStudentClassification(activity, config)
-      : missingActivityClassification();
+      : missingActivityClassification(config.activeIndicators);
 
     docs.push({
       studentId: student._id,
@@ -414,13 +466,15 @@ export async function generateClassifications({ course, lecturerId, input }) {
         courseConfigurationVersion: config.version,
         globalWeightsVersion: config.globalWeightsVersion,
         weights: config.weights,
+        activeIndicators: config.activeIndicators,
         lastActivityBands: config.lastActivityBands,
         classificationBoundaries: config.classificationBoundaries,
         version: config.version,
       },
       explanation: {
         overall: scored.reason,
-        formula: "E = (L × W_L) + (M × W_M) + (A × W_A) using effective weights of applicable indicators.",
+        formula:
+          "Overall score = sum of (indicator score × effective weight) for indicators that are active in this configuration and Calculated for this student.",
         indicators: scored.indicators,
         noClassifiableActivity: Boolean(scored.noClassifiableActivity),
       },
@@ -437,8 +491,20 @@ export async function generateClassifications({ course, lecturerId, input }) {
 
   let saved;
   try {
-    await ClassificationResult.insertMany(docs, { ordered: true });
-    saved = await ClassificationResult.find({ runId }).populate("studentId");
+    saved = await ClassificationResult.insertMany(docs, { ordered: true });
+    const summary = summarizeClassificationDocs(saved);
+    await saveRunSummary({
+      runId,
+      courseId: course._id,
+      runName,
+      generatedAt,
+      configurationVersion: config.version,
+      monitoringPeriodStart: normalizedPeriod.monitoringPeriodStart,
+      monitoringPeriodEnd: normalizedPeriod.monitoringPeriodEnd,
+      classifiedCount: summary.classifiedCount,
+      missingActivityCount: summary.missingActivityCount,
+      counts: summary.counts,
+    });
   } catch (error) {
     logClassificationError("generate.persist_failed", error, { ...logContext, runId: String(runId) });
     throw new HttpError(500, "Classification results could not be saved.");
@@ -446,6 +512,9 @@ export async function generateClassifications({ course, lecturerId, input }) {
 
   invalidateDashboardCache(lecturerId);
   const counts = countClassifications(saved);
+  const studentsById = new Map(
+    enrollments.filter((enrolment) => enrolment.studentId).map((enrolment) => [String(enrolment.studentId._id), enrolment.studentId]),
+  );
   logClassificationStage("generate.complete", {
     ...logContext,
     runId: String(runId),
@@ -465,50 +534,69 @@ export async function generateClassifications({ course, lecturerId, input }) {
       monitoringPeriodEnd: periodDateLabel(normalizedPeriod.monitoringPeriodEnd),
     },
     counts,
-    items: saved.map((row) => toPublicResult(row)),
+    items: saved.map((row) => toPublicResult(row, studentsById.get(String(row.studentId)))),
   };
 }
 
-async function resultsForPeriod(courseId, period, runId) {
-  const run = await runById(courseId, period, runId);
-  if (!run) {
-    return { run: null, results: [] };
-  }
-  const results = await ClassificationResult.find({ courseId, runId: run.runId }).populate("studentId");
-  return { run, results };
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function matchesSearch(result, search) {
-  if (!search) {
-    return true;
+async function pageResultsForRun({ courseId, runId, classifications, search, sortBy, sortDir, skip, limit }) {
+  if (!runId) {
+    return { items: [], total: 0 };
   }
-  const needle = search.toLowerCase();
-  const student = result.studentId;
-  return (
-    String(student?.fullName || "").toLowerCase().includes(needle) ||
-    String(student?.matriculationNumber || "").toLowerCase().includes(needle)
-  );
-}
+  const match = { courseId, runId };
+  if (classifications.length === 1) {
+    match.classification = classifications[0];
+  } else if (classifications.length > 1) {
+    match.classification = { $in: classifications };
+  }
 
-function sortResults(results, sortBy, sortDir) {
   const direction = sortDir === "desc" ? -1 : 1;
-  const copy = [...results];
-  copy.sort((left, right) => {
-    let comparison = 0;
-    if (sortBy === "overallScore") {
-      comparison = (left.overallScore ?? -1) - (right.overallScore ?? -1);
-    } else if (sortBy === "classification") {
-      comparison = String(left.classification).localeCompare(String(right.classification));
-    } else if (sortBy === "matriculationNumber") {
-      comparison = String(left.studentId?.matriculationNumber || "").localeCompare(
-        String(right.studentId?.matriculationNumber || ""),
-      );
-    } else {
-      comparison = String(left.studentId?.fullName || "").localeCompare(String(right.studentId?.fullName || ""));
-    }
-    return comparison * direction;
-  });
-  return copy;
+  const sortField =
+    sortBy === "overallScore"
+      ? "scoreSort"
+      : sortBy === "classification"
+        ? "classification"
+        : sortBy === "matriculationNumber"
+          ? "student.matriculationNumber"
+          : "student.fullName";
+
+  const pipeline = [{ $match: match }];
+  if (sortBy === "overallScore") {
+    pipeline.push({ $addFields: { scoreSort: { $ifNull: ["$overallScore", -1] } } });
+  }
+  pipeline.push(
+    { $lookup: { from: "students", localField: "studentId", foreignField: "_id", as: "student" } },
+    { $unwind: { path: "$student", preserveNullAndEmptyArrays: true } },
+  );
+  if (search) {
+    const regex = escapeRegex(search);
+    pipeline.push({
+      $match: {
+        $or: [
+          { "student.fullName": { $regex: regex, $options: "i" } },
+          { "student.matriculationNumber": { $regex: regex, $options: "i" } },
+        ],
+      },
+    });
+  }
+  pipeline.push(
+    { $sort: { [sortField]: direction, _id: 1 } },
+    {
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: "count" }],
+      },
+    },
+  );
+
+  const [page] = await ClassificationResult.aggregate(pipeline).collation({ locale: "en", strength: 2 });
+  return {
+    items: page?.items || [],
+    total: page?.total?.[0]?.count || 0,
+  };
 }
 
 async function attachActivityImports(pageRows) {
@@ -526,7 +614,7 @@ async function attachActivityImports(pageRows) {
   return pageRows.map((row) => {
     const batch = row.activityRecordId ? recordToBatch.get(String(row.activityRecordId)) : null;
     return {
-      ...toPublicResult(row),
+      ...toPublicResult(row, row.student),
       activityImport: batch
         ? {
             id: String(batch._id),
@@ -590,14 +678,17 @@ async function resolveImportUsedForRun(courseId, runId) {
   };
 }
 
-export async function getDashboard({ course, query }) {
+export async function getDashboard({ course, query, maxLimit = 100 }) {
   const queryPeriod = parseMonitoringPeriod(query || {});
+  const summaryOnly = String(query?.summary || "") === "1";
   const latestImportBatch = await findLatestConfirmedImport(course._id);
   const importPeriod = periodFromImportBatch(latestImportBatch);
   const importEffectivePeriod = importPeriod || queryPeriod;
-  const latestRunMeta = await ClassificationResult.findOne({ courseId: course._id })
+  await ensureCourseRunSummaries(course._id);
+  const latestRunMeta = await ClassificationRun.findOne({ courseId: course._id })
     .sort({ generatedAt: -1 })
-    .select("runId monitoringPeriodStart monitoringPeriodEnd generatedAt");
+    .select("runId monitoringPeriodStart monitoringPeriodEnd generatedAt")
+    .lean();
   const rosterPeriod = latestRunMeta
     ? {
         monitoringPeriodStart: latestRunMeta.monitoringPeriodStart,
@@ -606,10 +697,12 @@ export async function getDashboard({ course, query }) {
     : importEffectivePeriod;
   let viewPeriod = rosterPeriod;
   if (query.runId && mongoose.isValidObjectId(query.runId)) {
-    const selectedRunMeta = await ClassificationResult.findOne({
+    const selectedRunMeta = await ClassificationRun.findOne({
       courseId: course._id,
       runId: query.runId,
-    }).select("monitoringPeriodStart monitoringPeriodEnd");
+    })
+      .select("monitoringPeriodStart monitoringPeriodEnd")
+      .lean();
     if (selectedRunMeta?.monitoringPeriodStart && selectedRunMeta?.monitoringPeriodEnd) {
       viewPeriod = {
         monitoringPeriodStart: selectedRunMeta.monitoringPeriodStart,
@@ -617,21 +710,28 @@ export async function getDashboard({ course, query }) {
       };
     }
   }
-  const { run, results } = await resultsForPeriod(course._id, viewPeriod, query.runId);
+  const run = await runById(course._id, viewPeriod, query.runId);
+  const runSummary = run ? await ClassificationRun.findOne({ courseId: course._id, runId: run.runId }).lean() : null;
   const enrolledCount = await Enrollment.countDocuments({ courseId: course._id, status: "active" });
 
-  const pagination = parsePagination(query);
+  const pagination = parsePagination(query, { maxLimit });
   const classifications = parseClassificationFilter(query.classification ?? query.classifications);
   const search = String(query.q || query.search || "").trim();
-  const filtered = results.filter((result) => {
-    if (classifications.length && !classifications.includes(result.classification)) {
-      return false;
-    }
-    return matchesSearch(result, search);
-  });
-  const sorted = sortResults(filtered, query.sortBy || "fullName", query.sortDir || "asc");
-  const pageItems = sorted.slice(pagination.skip, pagination.skip + pagination.limit);
-  const activityImportUsed = run ? await resolveImportUsedForRun(course._id, run.runId) : null;
+  const page = summaryOnly
+    ? { items: [], total: 0 }
+    : await pageResultsForRun({
+        courseId: course._id,
+        runId: run?.runId,
+        classifications,
+        search,
+        sortBy: query.sortBy || "fullName",
+        sortDir: query.sortDir || "asc",
+        skip: pagination.skip,
+        limit: pagination.limit,
+      });
+  const activityImportUsed =
+    run && !summaryOnly ? await resolveImportUsedForRun(course._id, run.runId) : null;
+  const counts = runSummary?.counts || emptyCounts();
 
   return {
     period: rosterPeriod,
@@ -648,9 +748,9 @@ export async function getDashboard({ course, query }) {
     generatedAt: run?.generatedAt || null,
     configurationVersion: run?.configurationVersion || null,
     enrolledCount,
-    classifiedCount: results.length,
-    missingActivityCount: results.filter((result) => !result.activityRecordId).length,
-    counts: countClassifications(results),
+    classifiedCount: runSummary?.classifiedCount || 0,
+    missingActivityCount: runSummary?.missingActivityCount || 0,
+    counts,
     latestImport: publicImportBatch(latestImportBatch),
     latestClassification: latestRunMeta
       ? {
@@ -662,8 +762,8 @@ export async function getDashboard({ course, query }) {
       : null,
     activityImportUsed,
     results: paginated(
-      await attachActivityImports(pageItems),
-      sorted.length,
+      summaryOnly ? [] : await attachActivityImports(page.items),
+      page.total,
       pagination.page,
       pagination.limit,
     ),
@@ -703,34 +803,40 @@ function tryParseMonitoringPeriod(query) {
   return parseMonitoringPeriod(query || {});
 }
 
-function aggregateRunsForCourse(courseId, periodDates) {
+async function aggregateRunsForCourse(courseId, periodDates) {
+  await ensureCourseRunSummaries(courseId);
   const match = { courseId };
   if (periodDates) {
     Object.assign(match, periodFilter(periodDates.monitoringPeriodStart, periodDates.monitoringPeriodEnd));
   }
-  return ClassificationResult.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$runId",
-        generatedAt: { $max: "$generatedAt" },
-        runName: { $first: "$runName" },
-        configurationVersion: { $first: "$configurationVersion" },
-        monitoringPeriodStart: { $first: "$monitoringPeriodStart" },
-        monitoringPeriodEnd: { $first: "$monitoringPeriodEnd" },
-        count: { $sum: 1 },
-        ACTIVE: { $sum: { $cond: [{ $eq: ["$classification", "ACTIVE"] }, 1, 0] } },
-        REQUIRING_ATTENTION: {
-          $sum: { $cond: [{ $eq: ["$classification", "REQUIRING_ATTENTION"] }, 1, 0] },
-        },
-        INACTIVE: { $sum: { $cond: [{ $eq: ["$classification", "INACTIVE"] }, 1, 0] } },
-        INSUFFICIENT_DATA: {
-          $sum: { $cond: [{ $eq: ["$classification", "INSUFFICIENT_DATA"] }, 1, 0] },
-        },
-      },
-    },
-    { $sort: { generatedAt: -1 } },
+  const runs = await ClassificationRun.find(match).sort({ generatedAt: -1 }).lean();
+  return runs.map(runSummaryToAggregateRow);
+}
+
+const ATTENTION_PREVIEW_LIMIT = 5;
+
+function mixAttentionPreview(inactive, requiring) {
+  if (inactive.length && requiring.length) {
+    return [...inactive.slice(0, ATTENTION_PREVIEW_LIMIT - 1), requiring[0]];
+  }
+  return [...inactive, ...requiring].slice(0, ATTENTION_PREVIEW_LIMIT);
+}
+
+async function attentionPreviewForRun(courseId, runId) {
+  if (!runId) {
+    return [];
+  }
+  const [inactive, requiring] = await Promise.all([
+    ClassificationResult.find({ courseId, runId, classification: "INACTIVE" })
+      .sort({ overallScore: 1, _id: 1 })
+      .limit(ATTENTION_PREVIEW_LIMIT)
+      .populate("studentId", "fullName matriculationNumber email createdAt updatedAt"),
+    ClassificationResult.find({ courseId, runId, classification: "REQUIRING_ATTENTION" })
+      .sort({ overallScore: 1, _id: 1 })
+      .limit(ATTENTION_PREVIEW_LIMIT)
+      .populate("studentId", "fullName matriculationNumber email createdAt updatedAt"),
   ]);
+  return mixAttentionPreview(inactive, requiring).map((row) => toPublicResult(row));
 }
 
 function periodsMatch(left, right) {
@@ -745,31 +851,44 @@ function periodsMatch(left, right) {
   );
 }
 
+async function withRunListExtras(course, items, extra) {
+  const enrolledCount = await Enrollment.countDocuments({ courseId: course._id, status: "active" });
+  const latest = items[0];
+  return {
+    ...extra,
+    items,
+    enrolledCount,
+    attentionPreview: {
+      enrolledCount,
+      runId: latest?.runId || null,
+      items: latest ? await attentionPreviewForRun(course._id, latest.runId) : [],
+    },
+  };
+}
+
 export async function listClassificationRuns({ course, query }) {
   const scopeAll =
     String(query?.scope || "").toLowerCase() === "all" || String(query?.all || "").toLowerCase() === "true";
 
   if (scopeAll) {
     const runs = await aggregateRunsForCourse(course._id, null);
-    return {
+    return withRunListExtras(course, mapRunAggregationRows(runs), {
       period: null,
       requestedPeriod: null,
       periodAdjusted: false,
       scope: "all",
-      items: mapRunAggregationRows(runs),
-    };
+    });
   }
 
   const requestedPeriod = tryParseMonitoringPeriod(query || {});
   if (!requestedPeriod) {
     const runs = await aggregateRunsForCourse(course._id, null);
-    return {
+    return withRunListExtras(course, mapRunAggregationRows(runs), {
       period: null,
       requestedPeriod: null,
       periodAdjusted: false,
       scope: "all",
-      items: mapRunAggregationRows(runs),
-    };
+    });
   }
 
   let runs = await aggregateRunsForCourse(course._id, requestedPeriod);
@@ -777,9 +896,10 @@ export async function listClassificationRuns({ course, query }) {
   let periodAdjusted = false;
 
   if (!runs.length) {
-    const latest = await ClassificationResult.findOne({ courseId: course._id })
+    const latest = await ClassificationRun.findOne({ courseId: course._id })
       .sort({ generatedAt: -1 })
-      .select("monitoringPeriodStart monitoringPeriodEnd");
+      .select("monitoringPeriodStart monitoringPeriodEnd")
+      .lean();
     if (latest?.monitoringPeriodStart && latest?.monitoringPeriodEnd) {
       const resolvedPeriod = {
         monitoringPeriodStart: latest.monitoringPeriodStart,
@@ -793,13 +913,12 @@ export async function listClassificationRuns({ course, query }) {
     }
   }
 
-  return {
+  return withRunListExtras(course, mapRunAggregationRows(runs), {
     period,
     requestedPeriod,
     periodAdjusted,
     scope: "period",
-    items: mapRunAggregationRows(runs),
-  };
+  });
 }
 
 export async function getClassificationResult({ course, resultId }) {
@@ -828,16 +947,17 @@ export async function exportClassificationResultsCsv({ course, query }) {
   const dashboard = await getDashboard({
     course,
     query: { ...(query || {}), limit: 5000, page: 1 },
+    maxLimit: 5000,
   });
   const header = [
     "studentIdentifier",
     "studentName",
     "overallScore",
     "classification",
-    "lastActivityScore",
-    "lastActivityStatus",
-    "materialAccessScore",
-    "materialAccessStatus",
+    "learningActivityRecencyScore",
+    "learningActivityRecencyStatus",
+    "learningMaterialCompletionScore",
+    "learningMaterialCompletionStatus",
     "assignmentSubmissionScore",
     "assignmentSubmissionStatus",
     "configurationVersion",

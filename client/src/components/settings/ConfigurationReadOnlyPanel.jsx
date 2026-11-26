@@ -1,10 +1,18 @@
 import IndicatorGlyph from "../dashboard/IndicatorGlyph.jsx";
 import ClassificationBadge from "../design/ClassificationBadge.jsx";
-import { LAST_RECORDED_LOGIN_LABEL } from "../../lib/classifications.js";
+import { indicatorLabel } from "../../lib/classifications.js";
 import { toPercentFraction } from "../../lib/weights.js";
+
+function weightLine(key, weights, activeIndicators) {
+  if (activeIndicators?.[key] === false) {
+    return `${indicatorLabel(key)} — Excluded`;
+  }
+  return `${indicatorLabel(key)} — ${toPercentFraction(weights[key])}%`;
+}
 
 export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
   const weights = config?.weights || globalWeights?.weights;
+  const activeIndicators = globalWeights?.activeIndicators || config?.activeIndicators;
   if (!config || !weights) {
     return <p className="muted">Configuration not available.</p>;
   }
@@ -14,25 +22,21 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
       <section className="settings-config-block">
         <h3>Activity indicator weights (global)</h3>
         <p className="panel-desc">
-          Applied to all courses. Version {globalWeights?.version ?? config.globalWeightsVersion ?? "—"}.
+          Applied to all courses. Version {globalWeights?.version ?? config.globalWeightsVersion ?? "—"}. Excluded
+          indicators are not scored.
         </p>
         <ul className="settings-weight-list">
-          <li>
-            <IndicatorGlyph indicatorKey="lastActivity" /> {LAST_RECORDED_LOGIN_LABEL} — {toPercentFraction(weights.lastActivity)}%
-          </li>
-          <li>
-            <IndicatorGlyph indicatorKey="materialAccess" /> Material access — {toPercentFraction(weights.materialAccess)}%
-          </li>
-          <li>
-            <IndicatorGlyph indicatorKey="assignmentSubmission" /> Assignment submission —{" "}
-            {toPercentFraction(weights.assignmentSubmission)}%
-          </li>
+          {["lastActivity", "materialAccess", "assignmentSubmission"].map((key) => (
+            <li key={key}>
+              <IndicatorGlyph indicatorKey={key} /> {weightLine(key, weights, activeIndicators)}
+            </li>
+          ))}
         </ul>
       </section>
 
       <section className="settings-config-block">
-        <h3>{LAST_RECORDED_LOGIN_LABEL} bands</h3>
-        <p className="panel-desc">Course configuration v{config.version}. Days since last recorded login (UTC).</p>
+        <h3>{indicatorLabel("lastActivity")} bands</h3>
+        <p className="panel-desc">Course configuration v{config.version}. Days since the most recent qualifying learning activity (UTC).</p>
         <table className="data-table settings-compact-table">
           <thead>
             <tr>
@@ -56,10 +60,10 @@ export default function ConfigurationReadOnlyPanel({ config, globalWeights }) {
       </section>
 
       <section className="settings-config-block">
-        <h3>Course material access</h3>
+        <h3>{indicatorLabel("materialAccess")}</h3>
         <p className="panel-desc">
-          Calculated automatically: (materials accessed ÷ materials available) × 100. Not Applicable when no materials
-          were available.
+          Calculated automatically: (learning items completed ÷ learning items required) × 100. Not Applicable when no learning items
+          were required.
         </p>
       </section>
 

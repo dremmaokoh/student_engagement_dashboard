@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import ContentSkeleton, {
-  SkeletonChart,
-  SkeletonPageHeader,
-  SkeletonPanel,
-  SkeletonSummaryGrid,
-  SkeletonTable,
-} from "../components/common/ContentSkeleton.jsx";
+import ContentSkeleton, { SkeletonChart, SkeletonSummaryGrid } from "../components/common/ContentSkeleton.jsx";
 import ClassificationRunChanges from "../components/courses/ClassificationRunChanges.jsx";
 import CourseTabs from "../components/courses/CourseTabs.jsx";
 import StudentsNeedingAttention from "../components/courses/StudentsNeedingAttention.jsx";
@@ -16,13 +10,7 @@ import DistributionChart from "../components/dashboard/DistributionChart.jsx";
 import BackLink from "../components/layout/BackLink.jsx";
 import Breadcrumbs from "../components/layout/Breadcrumbs.jsx";
 import SummaryCard from "../components/design/SummaryCard.jsx";
-import {
-  assertAttentionDashboardsMatchRun,
-  ATTENTION_CLASSIFICATIONS,
-  attentionDashboardParams,
-  attentionItemsFromDashboards,
-  latestPeriodQuery,
-} from "../lib/attentionItems.js";
+import { latestPeriodQuery } from "../lib/attentionItems.js";
 import {
   courseMonitoringPath,
   courseOverviewPath,
@@ -30,7 +18,6 @@ import {
 } from "../lib/coursePeriod.js";
 import { formatCountDelta, runPeriodLabel } from "../lib/classificationRuns.js";
 import { ALL_CLASSIFICATIONS } from "../lib/classificationTrend.js";
-import { skeletonColumns } from "../lib/skeletonColumns.js";
 import { apiRequest } from "../services/api.js";
 
 function deltaHint(deltaText) {
@@ -93,19 +80,8 @@ export default function CourseOverviewPage() {
         throw new Error("Latest classification run is missing monitoring period dates.");
       }
 
-      const dashboards = await Promise.all(
-        ATTENTION_CLASSIFICATIONS.map((classification) => {
-          const params = attentionDashboardParams(period, latest.runId, classification);
-          return apiRequest(`/api/v1/courses/${courseId}/dashboard?${params.toString()}`);
-        }),
-      );
-      if (!isActive()) {
-        return;
-      }
-      const dashboardData = dashboards.map((response) => response.data);
-      assertAttentionDashboardsMatchRun(dashboardData, latest);
-      setEnrolledCount(dashboardData[0]?.enrolledCount ?? null);
-      setAttentionItems(attentionItemsFromDashboards(dashboardData));
+      setEnrolledCount(runsResult.data.enrolledCount ?? null);
+      setAttentionItems(runsResult.data.attentionPreview?.items || []);
 
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set("periodStart", period.periodStart);
@@ -148,25 +124,17 @@ export default function CourseOverviewPage() {
             { label: course?.code || "Course" },
           ]}
         />
-        {loading ? (
-          <SkeletonPageHeader />
-        ) : (
-          <>
-            <h1>
-              {course?.code} · {course?.name}
-            </h1>
-            <p className="lede">
-              {course?.description ||
-                "Classification summary and trends from saved runs. Latest results are shown by default."}
-            </p>
-            {latestPeriod ? (
-              <p className="panel-desc course-overview-latest-period">
-                Latest classification monitoring period: {latestPeriod.periodStart} to {latestPeriod.periodEnd}.
-                {previousRun ? " Summary cards compare with the previous run." : " Generate again to enable comparisons."}
-              </p>
-            ) : null}
-          </>
-        )}
+        <h1>{course ? `${course.code} · ${course.name}` : "Overview"}</h1>
+        <p className="lede">
+          {course?.description ||
+            "Classification summary and trends from saved runs. Latest results are shown by default."}
+        </p>
+        {!loading && latestPeriod ? (
+          <p className="panel-desc course-overview-latest-period">
+            Latest classification monitoring period: {latestPeriod.periodStart} to {latestPeriod.periodEnd}.
+            {previousRun ? " Summary cards compare with the previous run." : " Generate again to enable comparisons."}
+          </p>
+        ) : null}
         {error ? (
           <p className="form-error" role="alert">
             {error}
@@ -176,25 +144,32 @@ export default function CourseOverviewPage() {
 
       <CourseTabs courseId={courseId} />
 
-      <ContentSkeleton loading={loading} label="Loading course overview…">
-        <SkeletonSummaryGrid className="status-grid course-overview-kpis" count={5} withDelta />
-        <SkeletonPanel className="card course-overview-section" titleWidth="36%" showTitle lines={["64%"]}>
-          <SkeletonChart />
-        </SkeletonPanel>
-        <SkeletonPanel className="card course-overview-section" titleWidth="32%" showTitle lines={["58%"]}>
-          <SkeletonChart />
-        </SkeletonPanel>
-        <SkeletonPanel className="card course-overview-section" titleWidth="30%" showTitle lines={["70%", "52%"]} />
-        <SkeletonPanel className="card course-overview-section course-overview-attention" titleWidth="42%" showTitle>
-          <SkeletonTable
-            columns={skeletonColumns("attention")}
-            rows={4}
-            tableClassName="students-directory-table course-overview-attention-table"
-            wrapClassName="table-card students-table-wrap"
-            showFooter
-          />
-        </SkeletonPanel>
-      </ContentSkeleton>
+      {loading ? (
+        <>
+          <ContentSkeleton loading label="Loading course overview…">
+            <SkeletonSummaryGrid className="status-grid course-overview-kpis" count={5} withDelta />
+          </ContentSkeleton>
+          <section className="card course-overview-section">
+            <h2>Classification distribution</h2>
+            <p className="panel-desc">Latest classification run.</p>
+            <ContentSkeleton loading label="Loading classification distribution…">
+              <SkeletonChart showSnapshot={false} />
+            </ContentSkeleton>
+          </section>
+          <section className="card course-overview-section">
+            <div className="classification-trend-card-head">
+              <div>
+                <h2>Classification trend</h2>
+                <p className="panel-desc">Historical counts from each saved classification run for this course.</p>
+              </div>
+              <ClassificationTrendFilter value={classificationFilter} onChange={setClassificationFilter} />
+            </div>
+            <ClassificationTrendChart loading classificationFilter={classificationFilter} runs={[]} />
+          </section>
+          <ClassificationRunChanges loading />
+          <StudentsNeedingAttention loading courseId={courseId} items={[]} overviewPath={overviewPath} />
+        </>
+      ) : null}
 
       {!loading && !error && !hasRuns ? (
         <section className="card course-overview-section course-overview-empty-runs">
